@@ -156,9 +156,13 @@ export class AuthService {
     }
 
     // Successful login: reset failed-attempt counter and record session.
+    // Also clears a since-expired lock — without resetting status here, a
+    // user who waited out a lockout and entered the correct password would
+    // get valid tokens back but be rejected on every subsequent request,
+    // since JwtStrategy requires status === 'active'.
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { failedLoginAttempts: 0, lockedUntil: null },
+      data: { failedLoginAttempts: 0, lockedUntil: null, status: 'active' },
     });
     await this.recordLoginAttempt(user.id, 'success', ctx);
 
