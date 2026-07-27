@@ -8,8 +8,8 @@ import { AppLoggerModule } from './logging/logger.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { StorageModule } from './common/storage/storage.module';
 import { MessagingModule } from './messaging/messaging.module';
-import { QueueModule } from './queue/queue.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';
+import { QueueProcessorsModule } from './queue/queue-processors.module';
+import { NotificationsSchedulingModule } from './modules/notifications/notifications-scheduling.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 
 /**
@@ -28,8 +28,8 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
     StorageModule,
     MessagingModule,
     ComplianceModule,
-    NotificationsModule,
-    QueueModule,
+    NotificationsSchedulingModule,
+    QueueProcessorsModule,
   ],
 })
 class WorkerModule {}

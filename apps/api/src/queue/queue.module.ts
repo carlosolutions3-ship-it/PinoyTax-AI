@@ -3,12 +3,12 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { QUEUE_NAMES } from './queue-names';
-import { ComplianceScanProcessor } from './processors/compliance-scan.processor';
-import { NotificationDispatchProcessor } from './processors/notification-dispatch.processor';
 import { QueueProducerService } from './queue-producer.service';
-import { ComplianceModule } from '../modules/compliance/compliance.module';
-import { NotificationsModule } from '../modules/notifications/notifications.module';
 
+// Producer-only: the BullMQ connection, queue registrations, and
+// QueueProducerService. Safe to import from both the API and the worker.
+// Job *consumers* (the @Processor classes) live in QueueProcessorsModule,
+// imported only by worker.ts — see that module's doc comment.
 @Global()
 @Module({
   imports: [
@@ -35,10 +35,8 @@ import { NotificationsModule } from '../modules/notifications/notifications.modu
       { name: QUEUE_NAMES.COMPLIANCE_SCAN },
       { name: QUEUE_NAMES.NOTIFICATION_DISPATCH },
     ),
-    ComplianceModule,
-    NotificationsModule,
   ],
-  providers: [ComplianceScanProcessor, NotificationDispatchProcessor, QueueProducerService],
+  providers: [QueueProducerService],
   exports: [BullModule, QueueProducerService],
 })
 export class QueueModule {}

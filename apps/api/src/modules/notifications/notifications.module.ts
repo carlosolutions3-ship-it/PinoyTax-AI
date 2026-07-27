@@ -1,27 +1,20 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import {
   NotificationPreferencesController,
   NotificationsController,
 } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
-import { DeadlineReminderJob } from './deadline-reminder.job';
 import { EmailChannel } from './channels/email.channel';
 import { SmsChannel } from './channels/sms.channel';
 import { PushChannel } from './channels/push.channel';
 import { InAppChannel } from './channels/in-app.channel';
 
+// Scheduling (DeadlineReminderJob's @Cron) lives in
+// NotificationsSchedulingModule, imported only by the worker process — see
+// that module's doc comment for why it must not also run in the API.
 @Module({
-  imports: [ScheduleModule.forRoot()],
   controllers: [NotificationsController, NotificationPreferencesController],
-  providers: [
-    NotificationsService,
-    DeadlineReminderJob,
-    EmailChannel,
-    SmsChannel,
-    PushChannel,
-    InAppChannel,
-  ],
+  providers: [NotificationsService, EmailChannel, SmsChannel, PushChannel, InAppChannel],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}
