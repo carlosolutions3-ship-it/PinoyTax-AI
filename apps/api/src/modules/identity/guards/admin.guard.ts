@@ -14,9 +14,11 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
  * This is deliberately separate from PermissionsGuard: platform
  * administration is not scoped to a single company, so it cannot be
  * expressed via user_company_roles. It is gated by users.is_platform_admin,
- * a flag only settable directly in the database or by another platform
- * admin via a dedicated (heavily audited) endpoint — never via self-service
- * registration.
+ * a flag never settable via self-service registration. As of this writing
+ * the only way to set it is direct database access — no admin-management
+ * endpoint exists yet in modules/admin (only audit-log/security-event
+ * viewing does); build one (with its own heavy audit trail) before
+ * granting/revoking platform-admin needs to happen outside a DB console.
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
