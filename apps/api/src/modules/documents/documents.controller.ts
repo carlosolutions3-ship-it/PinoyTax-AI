@@ -16,7 +16,7 @@ import { DocumentsService } from './documents.service';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../identity/guards/permissions.guard';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { CreateFolderDto, UploadDocumentMetadataDto } from './dto/document.dto';
+import { CreateFolderDto, ListDocumentsQueryDto, UploadDocumentMetadataDto } from './dto/document.dto';
 
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB per Phase 3 §5 upload caps
 
@@ -43,8 +43,7 @@ export class DocumentsController {
   @RequirePermissions('documents:read')
   async listDocuments(
     @Param('companyId') companyId: string,
-    @Query('folderId') folderId?: string,
-    @Query('category') category?: string,
+    @Query() { folderId, category }: ListDocumentsQueryDto,
   ) {
     return this.documentsService.listDocuments(companyId, folderId, category);
   }

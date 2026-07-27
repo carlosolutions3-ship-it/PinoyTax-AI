@@ -448,7 +448,7 @@ model TaxRateHistory {
   id             String   @id @default(uuid())
   ruleId         String   @map("rule_id")
   rule           TaxRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  rateValue      Decimal  @map("rate_value") @db.Decimal(8, 5)
+  rateValue      Decimal  @map("rate_value") @db.Decimal(14, 5)
   bracketMin     Decimal? @map("bracket_min") @db.Decimal(14, 2)
   bracketMax     Decimal? @map("bracket_max") @db.Decimal(14, 2)
   effectiveFrom  DateTime @map("effective_from")

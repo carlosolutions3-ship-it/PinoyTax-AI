@@ -25,3 +25,13 @@ export class UploadDocumentMetadataDto {
   @IsString()
   folderId?: string;
 }
+
+export class ListDocumentsQueryDto {
+  @IsOptional()
+  @IsString()
+  folderId?: string;
+
+  @IsOptional()
+  @IsIn(DOCUMENT_CATEGORIES)
+  category?: (typeof DOCUMENT_CATEGORIES)[number];
+}

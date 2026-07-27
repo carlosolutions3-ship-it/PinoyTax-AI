@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { FilingStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { QueueProducerService } from '../../queue/queue-producer.service';
 
@@ -34,9 +35,9 @@ export class ComplianceService {
     await this.queueProducer.enqueueComplianceScan({ companyId: event.companyId });
   }
 
-  async getDeadlines(companyId: string, status?: string) {
+  async getDeadlines(companyId: string, status?: FilingStatus) {
     return this.prisma.filingDeadline.findMany({
-      where: { companyId, ...(status ? { status: status as never } : {}) },
+      where: { companyId, ...(status ? { status } : {}) },
       orderBy: { dueDate: 'asc' },
     });
   }

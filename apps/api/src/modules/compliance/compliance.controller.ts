@@ -13,6 +13,7 @@ import { ComplianceService } from './compliance.service';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../identity/guards/permissions.guard';
 import { UpdateIssueStatusDto } from './dto/update-issue-status.dto';
+import { GetDeadlinesQueryDto } from './dto/get-deadlines-query.dto';
 
 @ApiTags('compliance')
 @ApiBearerAuth('access-token')
@@ -25,7 +26,7 @@ export class ComplianceController {
   @RequirePermissions('compliance:read')
   async getDeadlines(
     @Param('companyId') companyId: string,
-    @Query('status') status?: string,
+    @Query() { status }: GetDeadlinesQueryDto,
   ) {
     return this.complianceService.getDeadlines(companyId, status);
   }

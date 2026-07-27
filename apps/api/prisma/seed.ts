@@ -115,6 +115,32 @@ function humanizeRoleCode(code: string): string {
  * needed, correct/update these rows — the engine will only ever be as
  * correct as this seeded data (see TaxEngineService's module doc comment).
  */
+// TaxRateHistory.id is a real Postgres `uuid` column (see the init
+// migration), so upsert targets must be valid UUIDs — these are fixed so
+// re-running the seed stays idempotent, with the human-readable key kept
+// only as an in-code label.
+const SEED_TAX_RATE_IDS: Record<string, string> = {
+  'seed-vat-rate-2023': 'a424562d-9f98-469f-b35e-3b3e8a95607a',
+  'seed-percentage-tax-2023': '74b6a200-b8ca-4854-a7cf-147b346d2328',
+  'seed-ewt-default-2023': 'ddb7b13b-bf01-49e4-b69a-68d163e00c14',
+  'seed-sss-employee-2023': '6b741c1e-937a-4cd7-a4be-e85f7073bef6',
+  'seed-philhealth-employee-2023': 'f55d1001-b997-4359-8f67-c01218e6e917',
+  'seed-pagibig-employee-2023': '41214964-a779-4d6f-a104-72bb584965ab',
+  'seed-vat-threshold-2023': 'f3247d61-9795-4b82-8070-33012610e32d',
+  'seed-income-bracket-1': 'ebb892ff-851f-4c05-bfc0-9dc6872a6e97',
+  'seed-income-bracket-2': '4721a393-2f05-442a-953d-59315da26c3d',
+  'seed-income-bracket-3': 'd8b93ef3-a7b9-49d2-a092-3e07b075e59b',
+  'seed-income-bracket-4': 'b493dea1-771f-4071-adf5-b7f12f46d350',
+  'seed-income-bracket-5': '10e7b628-7503-447e-b8e0-dfd95563b454',
+  'seed-income-bracket-6': '2809815b-5834-4c9c-957e-e73965970d36',
+  'seed-wh-bracket-1': 'c7ab7410-f263-4e51-9374-3693713fb591',
+  'seed-wh-bracket-2': 'eca7e407-e928-4673-8db6-9fdb5aa833e1',
+  'seed-wh-bracket-3': 'aa8494a6-eb8d-430d-8d4a-b1678d5281d2',
+  'seed-wh-bracket-4': 'f3668692-0dcb-4d3f-967b-a8499b0c022b',
+  'seed-wh-bracket-5': '4e990afa-58b8-4b24-b89e-c464b2027e35',
+  'seed-wh-bracket-6': '59c95511-3676-4a4b-b18b-5318b911d88e',
+};
+
 async function seedTaxRules() {
   const EFFECTIVE_FROM = new Date('2023-01-01');
 
@@ -130,9 +156,9 @@ async function seedTaxRules() {
     update: {},
   });
   await prisma.taxRateHistory.upsert({
-    where: { id: 'seed-vat-rate-2023' },
+    where: { id: SEED_TAX_RATE_IDS['seed-vat-rate-2023'] },
     create: {
-      id: 'seed-vat-rate-2023',
+      id: SEED_TAX_RATE_IDS['seed-vat-rate-2023'],
       ruleId: vatRule.id,
       rateValue: 0.12,
       effectiveFrom: EFFECTIVE_FROM,
@@ -152,9 +178,9 @@ async function seedTaxRules() {
     update: {},
   });
   await prisma.taxRateHistory.upsert({
-    where: { id: 'seed-percentage-tax-2023' },
+    where: { id: SEED_TAX_RATE_IDS['seed-percentage-tax-2023'] },
     create: {
-      id: 'seed-percentage-tax-2023',
+      id: SEED_TAX_RATE_IDS['seed-percentage-tax-2023'],
       ruleId: percentageTaxRule.id,
       rateValue: 0.03,
       effectiveFrom: EFFECTIVE_FROM,
@@ -175,9 +201,9 @@ async function seedTaxRules() {
     update: {},
   });
   await prisma.taxRateHistory.upsert({
-    where: { id: 'seed-ewt-default-2023' },
+    where: { id: SEED_TAX_RATE_IDS['seed-ewt-default-2023'] },
     create: {
-      id: 'seed-ewt-default-2023',
+      id: SEED_TAX_RATE_IDS['seed-ewt-default-2023'],
       ruleId: ewtRule.id,
       rateValue: 0.02,
       effectiveFrom: EFFECTIVE_FROM,
@@ -198,9 +224,9 @@ async function seedTaxRules() {
     update: {},
   });
   await prisma.taxRateHistory.upsert({
-    where: { id: 'seed-sss-employee-2023' },
+    where: { id: SEED_TAX_RATE_IDS['seed-sss-employee-2023'] },
     create: {
-      id: 'seed-sss-employee-2023',
+      id: SEED_TAX_RATE_IDS['seed-sss-employee-2023'],
       ruleId: sssRule.id,
       rateValue: 0.045,
       effectiveFrom: EFFECTIVE_FROM,
@@ -220,9 +246,9 @@ async function seedTaxRules() {
     update: {},
   });
   await prisma.taxRateHistory.upsert({
-    where: { id: 'seed-philhealth-employee-2023' },
+    where: { id: SEED_TAX_RATE_IDS['seed-philhealth-employee-2023'] },
     create: {
-      id: 'seed-philhealth-employee-2023',
+      id: SEED_TAX_RATE_IDS['seed-philhealth-employee-2023'],
       ruleId: philhealthRule.id,
       rateValue: 0.025,
       effectiveFrom: EFFECTIVE_FROM,
@@ -242,9 +268,9 @@ async function seedTaxRules() {
     update: {},
   });
   await prisma.taxRateHistory.upsert({
-    where: { id: 'seed-pagibig-employee-2023' },
+    where: { id: SEED_TAX_RATE_IDS['seed-pagibig-employee-2023'] },
     create: {
-      id: 'seed-pagibig-employee-2023',
+      id: SEED_TAX_RATE_IDS['seed-pagibig-employee-2023'],
       ruleId: pagibigRule.id,
       rateValue: 0.02,
       effectiveFrom: EFFECTIVE_FROM,
@@ -264,9 +290,9 @@ async function seedTaxRules() {
     update: {},
   });
   await prisma.taxRateHistory.upsert({
-    where: { id: 'seed-vat-threshold-2023' },
+    where: { id: SEED_TAX_RATE_IDS['seed-vat-threshold-2023'] },
     create: {
-      id: 'seed-vat-threshold-2023',
+      id: SEED_TAX_RATE_IDS['seed-vat-threshold-2023'],
       ruleId: vatThresholdRule.id,
       rateValue: 3000000,
       effectiveFrom: EFFECTIVE_FROM,
@@ -294,7 +320,8 @@ async function seedTaxRules() {
     ['seed-income-bracket-5', 2000000, 8000000, 0.3],
     ['seed-income-bracket-6', 8000000, null, 0.35],
   ];
-  for (const [id, min, max, rate] of incomeTaxBrackets) {
+  for (const [label, min, max, rate] of incomeTaxBrackets) {
+    const id = SEED_TAX_RATE_IDS[label];
     await prisma.taxRateHistory.upsert({
       where: { id },
       create: {
@@ -330,7 +357,8 @@ async function seedTaxRules() {
     ['seed-wh-bracket-5', 166667, 666667, 0.3],
     ['seed-wh-bracket-6', 666667, null, 0.35],
   ];
-  for (const [id, min, max, rate] of withholdingBrackets) {
+  for (const [label, min, max, rate] of withholdingBrackets) {
+    const id = SEED_TAX_RATE_IDS[label];
     await prisma.taxRateHistory.upsert({
       where: { id },
       create: {
