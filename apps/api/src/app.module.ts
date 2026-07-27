@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import configFactories from './config';
+import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { StorageModule } from './common/storage/storage.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -26,7 +27,11 @@ import { AppLoggerModule } from './logging/logger.module';
 @Module({
   imports: [
     AppLoggerModule,
-    ConfigModule.forRoot({ isGlobal: true, load: configFactories }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: configFactories,
+      validationSchema: envValidationSchema,
+    }),
     EventEmitterModule.forRoot(),
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 120 }], // general API default; auth endpoints override per-route

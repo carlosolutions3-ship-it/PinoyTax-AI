@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import configFactories from './config';
+import { envValidationSchema } from './config/env.validation';
 import { AppLoggerModule } from './logging/logger.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { StorageModule } from './common/storage/storage.module';
@@ -22,7 +23,11 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
 @Module({
   imports: [
     AppLoggerModule,
-    ConfigModule.forRoot({ isGlobal: true, load: configFactories }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: configFactories,
+      validationSchema: envValidationSchema,
+    }),
     EventEmitterModule.forRoot(),
     PrismaModule,
     StorageModule,
