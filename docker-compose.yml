@@ -1,0 +1,107 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pinoytax_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pinoytax
+      POSTGRES_PASSWORD: pinoytax_dev_password
+      POSTGRES_DB: pinoytax_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pinoytax_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pinoytax"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pinoytax_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: pinoytax_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: pinoytax
+      RABBITMQ_DEFAULT_PASS: pinoytax_dev_password
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: pinoytax_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    env_file:
+      - ./apps/api/.env
+    environment:
+      # Overrides for in-network hostnames — .env's defaults point at
+      # localhost for running the API outside Docker; inside the compose
+      # network, services reach each other by service name.
+      DATABASE_URL: postgresql://pinoytax:pinoytax_dev_password@postgres:5432/pinoytax_ai?schema=public
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://pinoytax:pinoytax_dev_password@rabbitmq:5672
+    ports:
+      - "3001:3001"
+
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: pinoytax_worker
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    env_file:
+      - ./apps/api/.env
+    environment:
+      DATABASE_URL: postgresql://pinoytax:pinoytax_dev_password@postgres:5432/pinoytax_ai?schema=public
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://pinoytax:pinoytax_dev_password@rabbitmq:5672
+
+  # The `web` service (Next.js frontend) is added once apps/web/Dockerfile
+  # exists — see the project README for status. Uncomment when ready:
+  # web:
+  #   build:
+  #     context: ./apps/web
+  #     dockerfile: Dockerfile
+  #   container_name: pinoytax_web
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - api
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: http://localhost:3001/v1
+  #   ports:
+  #     - "3000:3000"
+
+volumes:
+  pinoytax_pg_data:

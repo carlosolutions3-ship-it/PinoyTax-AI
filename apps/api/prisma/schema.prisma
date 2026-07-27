@@ -1,0 +1,775 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["identity", "org", "payroll", "tax_engine", "compliance", "forms", "documents", "ai", "notifications", "audit"]
+}
+
+// ============================================================
+// IDENTITY
+// ============================================================
+
+enum AuthProvider {
+  local
+  google
+  microsoft
+}
+
+enum UserStatus {
+  active
+  locked
+  suspended
+  deactivated
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String?   @map("password_hash")
+  authProvider        AuthProvider @default(local) @map("auth_provider")
+  providerUserId      String?   @map("provider_user_id")
+  firstName           String    @map("first_name")
+  lastName            String    @map("last_name")
+  phoneNumber         String?   @map("phone_number")
+  isEmailVerified     Boolean   @default(false) @map("is_email_verified")
+  isPlatformAdmin     Boolean   @default(false) @map("is_platform_admin")
+  status              UserStatus @default(active)
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  sessions              Session[]
+  loginHistory          LoginHistory[]
+  passwordResetTokens   PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  companyRoles          UserCompanyRole[]
+  invitationsSent       UserCompanyRole[] @relation("InvitedBy")
+  auditLogs             AuditLog[]
+  securityEvents        SecurityEvent[]
+  aiConversations       AiConversation[]
+  notifications         Notification[]
+  notificationPrefs     NotificationPreference[]
+
+  @@map("users")
+  @@schema("identity")
+}
+
+model Session {
+  id                 String    @id @default(uuid())
+  userId             String    @map("user_id")
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash   String    @map("refresh_token_hash")
+  deviceFingerprint  String    @map("device_fingerprint")
+  deviceName         String?   @map("device_name")
+  ipAddress          String?   @map("ip_address")
+  userAgent          String?   @map("user_agent")
+  isRememberMe       Boolean   @default(false) @map("is_remember_me")
+  lastActiveAt       DateTime  @default(now()) @map("last_active_at")
+  expiresAt          DateTime  @map("expires_at")
+  revokedAt          DateTime? @map("revoked_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+  @@schema("identity")
+}
+
+enum LoginStatus {
+  success
+  failed_password
+  failed_locked
+  failed_unverified
+}
+
+model LoginHistory {
+  id        String      @id @default(uuid())
+  userId    String      @map("user_id")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    LoginStatus
+  ipAddress String?     @map("ip_address")
+  userAgent String?     @map("user_agent")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("login_history")
+  @@schema("identity")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("password_reset_tokens")
+  @@schema("identity")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("email_verification_tokens")
+  @@schema("identity")
+}
+
+model Role {
+  id          String  @id @default(uuid())
+  code        String  @unique // business_owner, accountant, bookkeeper, administrator, firm_admin
+  name        String
+  description String?
+
+  permissions     RolePermission[]
+  userCompanyRoles UserCompanyRole[]
+
+  @@map("roles")
+  @@schema("identity")
+}
+
+model Permission {
+  id    String @id @default(uuid())
+  code  String @unique // e.g. payroll:write, filings:approve
+  label String
+
+  roles RolePermission[]
+
+  @@map("permissions")
+  @@schema("identity")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String     @map("permission_id")
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+  @@schema("identity")
+}
+
+// ============================================================
+// ORGANIZATION
+// ============================================================
+
+enum FirmType {
+  accounting_firm
+  bookkeeping_firm
+  tax_consultancy
+}
+
+model Firm {
+  id            String   @id @default(uuid())
+  firmName      String   @map("firm_name")
+  firmType      FirmType @map("firm_type")
+  contactEmail  String   @map("contact_email")
+  contactNumber String?  @map("contact_number")
+  status        String   @default("active")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  companies Company[]
+
+  @@map("firms")
+  @@schema("org")
+}
+
+enum BusinessType {
+  sole_prop
+  opc
+  partnership
+  corporation
+}
+
+enum VatClassification {
+  vat
+  non_vat
+}
+
+enum AccountingMethod {
+  accrual
+  cash
+}
+
+enum CompanyStatus {
+  active
+  inactive
+  under_review
+}
+
+model Company {
+  id                      String            @id @default(uuid())
+  firmId                  String?           @map("firm_id")
+  firm                    Firm?             @relation(fields: [firmId], references: [id])
+  businessName            String            @map("business_name")
+  tradeName               String?           @map("trade_name")
+  businessType            BusinessType      @map("business_type")
+  taxpayerClassification  String?           @map("taxpayer_classification")
+  vatClassification       VatClassification @map("vat_classification")
+  tin                     String            @unique
+  rdoCode                 String?           @map("rdo_code")
+  secRegistrationNumber   String?           @map("sec_registration_number")
+  dtiRegistrationNumber   String?           @map("dti_registration_number")
+  cdaRegistrationNumber   String?           @map("cda_registration_number")
+  businessAddress         String?           @map("business_address")
+  email                   String?
+  contactNumber           String?           @map("contact_number")
+  registrationDate        DateTime?         @map("registration_date")
+  fiscalYearStart         DateTime?         @map("fiscal_year_start")
+  accountingMethod        AccountingMethod  @default(accrual) @map("accounting_method")
+  currency                String            @default("PHP")
+  logoUrl                 String?           @map("logo_url")
+  status                  CompanyStatus     @default(active)
+  createdAt               DateTime          @default(now()) @map("created_at")
+  updatedAt               DateTime          @updatedAt @map("updated_at")
+
+  branches          Branch[]
+  documents         CompanyDocument[]
+  userRoles         UserCompanyRole[]
+  employees         Employee[]
+  payrollRuns       PayrollRun[]
+  taxComputations   TaxComputation[]
+  filingDeadlines   FilingDeadline[]
+  complianceStatus  ComplianceStatus[]
+  flaggedIssues     FlaggedIssue[]
+  vaultDocuments    VaultDocument[]
+  folders           Folder[]
+  aiConversations   AiConversation[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+
+  @@map("companies")
+  @@schema("org")
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchName String  @map("branch_name")
+  branchAddress String? @map("branch_address")
+  rdoCode   String?  @map("rdo_code")
+  status    String   @default("active")
+
+  @@index([companyId])
+  @@map("branches")
+  @@schema("org")
+}
+
+model CompanyDocument {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documentType String   @map("document_type") // bir_2303, business_permit, mayors_permit, dti_cert, sec_cert, other
+  documentId   String?  @map("document_id")
+  vaultDocument VaultDocument? @relation(fields: [documentId], references: [id])
+  verified     Boolean  @default(false)
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  @@index([companyId])
+  @@map("company_documents")
+  @@schema("org")
+}
+
+enum UserCompanyRoleStatus {
+  pending
+  active
+  revoked
+}
+
+model UserCompanyRole {
+  id         String                 @id @default(uuid())
+  userId     String                 @map("user_id")
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId  String                 @map("company_id")
+  company    Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleId     String                 @map("role_id")
+  role       Role                   @relation(fields: [roleId], references: [id])
+  invitedById String?               @map("invited_by")
+  invitedBy  User?                  @relation("InvitedBy", fields: [invitedById], references: [id])
+  status     UserCompanyRoleStatus  @default(pending)
+  invitedAt  DateTime               @default(now()) @map("invited_at")
+  acceptedAt DateTime?              @map("accepted_at")
+
+  @@unique([userId, companyId, roleId])
+  @@index([companyId])
+  @@map("user_company_roles")
+  @@schema("org")
+}
+
+// ============================================================
+// PAYROLL
+// ============================================================
+
+enum EmploymentStatus {
+  active
+  resigned
+  terminated
+}
+
+enum PayFrequency {
+  monthly
+  semi_monthly
+  weekly
+}
+
+model Employee {
+  id                String           @id @default(uuid())
+  companyId         String           @map("company_id")
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  firstName         String           @map("first_name")
+  lastName          String           @map("last_name")
+  tin               String?
+  sssNumber         String?          @map("sss_number")
+  philhealthNumber  String?          @map("philhealth_number")
+  pagibigNumber     String?          @map("pagibig_number")
+  employmentStatus  EmploymentStatus @default(active) @map("employment_status")
+  dateHired         DateTime?        @map("date_hired")
+  basicSalary       Decimal          @map("basic_salary") @db.Decimal(14, 2)
+  payFrequency      PayFrequency     @default(monthly) @map("pay_frequency")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  payslips Payslip[]
+
+  @@index([companyId])
+  @@map("employees")
+  @@schema("payroll")
+}
+
+enum PayrollRunStatus {
+  draft
+  processing
+  finalized
+  paid
+}
+
+model PayrollRun {
+  id           String            @id @default(uuid())
+  companyId    String            @map("company_id")
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodStart  DateTime          @map("period_start")
+  periodEnd    DateTime          @map("period_end")
+  status       PayrollRunStatus  @default(draft)
+  createdById  String?           @map("created_by")
+  finalizedAt  DateTime?         @map("finalized_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  payslips Payslip[]
+
+  @@index([companyId])
+  @@map("payroll_runs")
+  @@schema("payroll")
+}
+
+model Payslip {
+  id                     String     @id @default(uuid())
+  payrollRunId           String     @map("payroll_run_id")
+  payrollRun             PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employeeId             String     @map("employee_id")
+  employee               Employee   @relation(fields: [employeeId], references: [id])
+  basicPay               Decimal    @map("basic_pay") @db.Decimal(14, 2)
+  overtimePay            Decimal    @default(0) @map("overtime_pay") @db.Decimal(14, 2)
+  holidayPay             Decimal    @default(0) @map("holiday_pay") @db.Decimal(14, 2)
+  allowances             Decimal    @default(0) @db.Decimal(14, 2)
+  sssContribution        Decimal    @default(0) @map("sss_contribution") @db.Decimal(14, 2)
+  philhealthContribution Decimal    @default(0) @map("philhealth_contribution") @db.Decimal(14, 2)
+  pagibigContribution    Decimal    @default(0) @map("pagibig_contribution") @db.Decimal(14, 2)
+  withholdingTax         Decimal    @default(0) @map("withholding_tax") @db.Decimal(14, 2)
+  grossPay               Decimal    @map("gross_pay") @db.Decimal(14, 2)
+  totalDeductions        Decimal    @map("total_deductions") @db.Decimal(14, 2)
+  netPay                 Decimal    @map("net_pay") @db.Decimal(14, 2)
+  computationSnapshot    Json?      @map("computation_snapshot")
+
+  @@index([payrollRunId])
+  @@index([employeeId])
+  @@map("payslips")
+  @@schema("payroll")
+}
+
+// ============================================================
+// TAX ENGINE
+// ============================================================
+
+model TaxRule {
+  id               String   @id @default(uuid())
+  ruleCode         String   @unique @map("rule_code")
+  description      String?
+  appliesTo        String?  @map("applies_to")
+  sourceReference  String?  @map("source_reference")
+  effectiveFrom    DateTime @map("effective_from")
+  effectiveTo      DateTime? @map("effective_to")
+  createdById      String?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  ratesHistory TaxRateHistory[]
+
+  @@map("tax_rules")
+  @@schema("tax_engine")
+}
+
+model TaxRateHistory {
+  id             String   @id @default(uuid())
+  ruleId         String   @map("rule_id")
+  rule           TaxRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rateValue      Decimal  @map("rate_value") @db.Decimal(8, 5)
+  bracketMin     Decimal? @map("bracket_min") @db.Decimal(14, 2)
+  bracketMax     Decimal? @map("bracket_max") @db.Decimal(14, 2)
+  effectiveFrom  DateTime @map("effective_from")
+  effectiveTo    DateTime? @map("effective_to")
+
+  @@index([ruleId])
+  @@map("tax_rates_history")
+  @@schema("tax_engine")
+}
+
+enum ComputationType {
+  income_tax
+  vat
+  percentage_tax
+  ewt
+  withholding_comp
+}
+
+enum ComputationStatus {
+  draft
+  confirmed
+}
+
+model TaxComputation {
+  id              String            @id @default(uuid())
+  companyId       String            @map("company_id")
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  computationType ComputationType   @map("computation_type")
+  periodStart     DateTime          @map("period_start")
+  periodEnd       DateTime          @map("period_end")
+  inputs          Json
+  ruleIdsUsed     String[]          @map("rule_ids_used")
+  result          Decimal?          @db.Decimal(14, 2)
+  missingInputs   String[]          @map("missing_inputs")
+  status          ComputationStatus @default(draft)
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  @@index([companyId])
+  @@map("tax_computations")
+  @@schema("tax_engine")
+}
+
+// ============================================================
+// COMPLIANCE
+// ============================================================
+
+enum Agency {
+  bir
+  sss
+  philhealth
+  pagibig
+  lgu
+}
+
+enum FilingStatus {
+  upcoming
+  due_today
+  overdue
+  filed
+}
+
+model FilingDeadline {
+  id          String       @id @default(uuid())
+  companyId   String       @map("company_id")
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  formCode    String       @map("form_code")
+  agency      Agency
+  periodStart DateTime     @map("period_start")
+  periodEnd   DateTime     @map("period_end")
+  dueDate     DateTime     @map("due_date")
+  status      FilingStatus @default(upcoming)
+
+  @@index([companyId, dueDate, status])
+  @@map("filing_deadlines")
+  @@schema("compliance")
+}
+
+model ComplianceStatus {
+  id                   String   @id @default(uuid())
+  companyId            String   @map("company_id")
+  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category             String
+  completedCount       Int      @default(0) @map("completed_count")
+  pendingCount         Int      @default(0) @map("pending_count")
+  missingCount         Int      @default(0) @map("missing_count")
+  overdueCount         Int      @default(0) @map("overdue_count")
+  compliancePercentage Decimal  @default(0) @map("compliance_percentage") @db.Decimal(5, 2)
+  lastComputedAt       DateTime @default(now()) @map("last_computed_at")
+
+  @@index([companyId])
+  @@map("compliance_status")
+  @@schema("compliance")
+}
+
+enum IssueType {
+  missing_filing
+  missing_contribution
+  missing_document
+  vat_misclassification
+  duplicate_transaction
+  duplicate_expense
+  computation_error
+  missing_info
+  other_risk
+}
+
+enum IssueSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum IssueStatus {
+  open
+  acknowledged
+  resolved
+  dismissed
+}
+
+model FlaggedIssue {
+  id                  String        @id @default(uuid())
+  companyId           String        @map("company_id")
+  company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  issueType           IssueType     @map("issue_type")
+  severity            IssueSeverity
+  description         String
+  recommendedAction   String?       @map("recommended_action")
+  relatedEntityType   String?       @map("related_entity_type")
+  relatedEntityId     String?       @map("related_entity_id")
+  status              IssueStatus   @default(open)
+  detectedAt          DateTime      @default(now()) @map("detected_at")
+  resolvedAt          DateTime?     @map("resolved_at")
+
+  @@index([companyId, status])
+  @@map("flagged_issues")
+  @@schema("compliance")
+}
+
+// ============================================================
+// FORMS
+// ============================================================
+
+model FormTemplate {
+  id                 String   @id @default(uuid())
+  formCode           String   @unique @map("form_code")
+  agency             Agency
+  title              String
+  description        String?
+  purpose            String?
+  filingFrequency    String?  @map("filing_frequency")
+  defaultDueRule     String?  @map("default_due_rule")
+  requiredAttachments String[] @map("required_attachments")
+  fileUrl            String?  @map("file_url")
+  version            String?
+
+  @@map("form_templates")
+  @@schema("forms")
+}
+
+// ============================================================
+// DOCUMENTS
+// ============================================================
+
+model Folder {
+  id             String   @id @default(uuid())
+  companyId      String   @map("company_id")
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  parentFolderId String?  @map("parent_folder_id")
+  parentFolder   Folder?  @relation("FolderTree", fields: [parentFolderId], references: [id])
+  children       Folder[] @relation("FolderTree")
+
+  documents VaultDocument[]
+
+  @@index([companyId])
+  @@map("folders")
+  @@schema("documents")
+}
+
+model VaultDocument {
+  id               String              @id @default(uuid())
+  companyId        String              @map("company_id")
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folderId         String?             @map("folder_id")
+  folder           Folder?             @relation(fields: [folderId], references: [id])
+  category         String
+  fileName         String              @map("file_name")
+  storageKey       String              @map("storage_key")
+  mimeType         String?             @map("mime_type")
+  sizeBytes        BigInt?             @map("size_bytes")
+  uploadedById     String?             @map("uploaded_by")
+  currentVersionId String?             @map("current_version_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
+
+  versions         DocumentVersion[]
+  companyDocuments CompanyDocument[]
+
+  @@index([companyId, folderId])
+  @@map("documents")
+  @@schema("documents")
+}
+
+model DocumentVersion {
+  id            String        @id @default(uuid())
+  documentId    String        @map("document_id")
+  document      VaultDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  storageKey    String        @map("storage_key")
+  versionNumber Int           @map("version_number")
+  uploadedById  String?       @map("uploaded_by")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@map("document_versions")
+  @@schema("documents")
+}
+
+// ============================================================
+// AI
+// ============================================================
+
+model AiConversation {
+  id            String   @id @default(uuid())
+  companyId     String   @map("company_id")
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id])
+  startedAt     DateTime @default(now()) @map("started_at")
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+
+  messages AiMessage[]
+
+  @@index([companyId])
+  @@map("ai_conversations")
+  @@schema("ai")
+}
+
+enum MessageSender {
+  user
+  assistant
+}
+
+enum ConfidenceFlag {
+  grounded
+  low_confidence
+  missing_info
+}
+
+model AiMessage {
+  id               String         @id @default(uuid())
+  conversationId   String         @map("conversation_id")
+  conversation     AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender           MessageSender
+  content          String
+  retrievedSources Json?          @map("retrieved_sources")
+  confidenceFlag   ConfidenceFlag? @map("confidence_flag")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  @@index([conversationId])
+  @@map("ai_messages")
+  @@schema("ai")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+enum NotificationChannel {
+  email
+  sms
+  push
+  in_app
+}
+
+enum NotificationStatus {
+  queued
+  sent
+  failed
+  read
+}
+
+model Notification {
+  id                String              @id @default(uuid())
+  companyId         String?             @map("company_id")
+  company           Company?            @relation(fields: [companyId], references: [id])
+  userId            String              @map("user_id")
+  user              User                @relation(fields: [userId], references: [id])
+  channel           NotificationChannel
+  category          String
+  title             String
+  body              String
+  relatedDeadlineId String?             @map("related_deadline_id")
+  status            NotificationStatus  @default(queued)
+  scheduledFor      DateTime?           @map("scheduled_for")
+  sentAt            DateTime?           @map("sent_at")
+
+  @@index([userId, status])
+  @@map("notifications")
+  @@schema("notifications")
+}
+
+model NotificationPreference {
+  id        String  @id @default(uuid())
+  userId    String  @map("user_id")
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
+  category  String
+  isEnabled Boolean @default(true) @map("is_enabled")
+
+  @@unique([userId, channel, category])
+  @@map("notification_preferences")
+  @@schema("notifications")
+}
+
+// ============================================================
+// AUDIT
+// ============================================================
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  companyId    String?  @map("company_id")
+  company      Company? @relation(fields: [companyId], references: [id])
+  actorUserId  String?  @map("actor_user_id")
+  actorUser    User?    @relation(fields: [actorUserId], references: [id])
+  action       String
+  entityType   String?  @map("entity_type")
+  entityId     String?  @map("entity_id")
+  beforeState  Json?    @map("before_state")
+  afterState   Json?    @map("after_state")
+  ipAddress    String?  @map("ip_address")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([companyId, createdAt])
+  @@map("audit_logs")
+  @@schema("audit")
+}
+
+model SecurityEvent {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id])
+  eventType String   @map("event_type") // failed_login, account_locked, password_reset, suspicious_ip, permission_denied
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("security_events")
+  @@schema("audit")
+}
