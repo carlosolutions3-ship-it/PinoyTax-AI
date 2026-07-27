@@ -18,7 +18,7 @@ const EXCHANGE_NAME = 'pinoytax.domain-events';
 @Injectable()
 export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RabbitMqService.name);
-  private connection: amqplib.Connection | null = null;
+  private connection: amqplib.ChannelModel | null = null;
   private channel: amqplib.Channel | null = null;
 
   constructor(private readonly config: ConfigService) {}

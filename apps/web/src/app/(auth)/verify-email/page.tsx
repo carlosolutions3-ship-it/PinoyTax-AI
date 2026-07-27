@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/endpoints';
@@ -8,6 +8,14 @@ import { ApiError } from '@/lib/api-client';
 import { Card } from '@/components/ui';
 
 export default function VerifyEmailPage() {
+  return (
+    <Suspense>
+      <VerifyEmailStatus />
+    </Suspense>
+  );
+}
+
+function VerifyEmailStatus() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
   const [status, setStatus] = useState<'pending' | 'success' | 'error'>('pending');

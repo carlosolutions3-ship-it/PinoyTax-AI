@@ -17,6 +17,8 @@ enum AuthProvider {
   local
   google
   microsoft
+
+  @@schema("identity")
 }
 
 enum UserStatus {
@@ -24,6 +26,8 @@ enum UserStatus {
   locked
   suspended
   deactivated
+
+  @@schema("identity")
 }
 
 model User {
@@ -84,6 +88,8 @@ enum LoginStatus {
   failed_password
   failed_locked
   failed_unverified
+
+  @@schema("identity")
 }
 
 model LoginHistory {
@@ -169,6 +175,8 @@ enum FirmType {
   accounting_firm
   bookkeeping_firm
   tax_consultancy
+
+  @@schema("org")
 }
 
 model Firm {
@@ -191,22 +199,30 @@ enum BusinessType {
   opc
   partnership
   corporation
+
+  @@schema("org")
 }
 
 enum VatClassification {
   vat
   non_vat
+
+  @@schema("org")
 }
 
 enum AccountingMethod {
   accrual
   cash
+
+  @@schema("org")
 }
 
 enum CompanyStatus {
   active
   inactive
   under_review
+
+  @@schema("org")
 }
 
 model Company {
@@ -287,6 +303,8 @@ enum UserCompanyRoleStatus {
   pending
   active
   revoked
+
+  @@schema("org")
 }
 
 model UserCompanyRole {
@@ -317,12 +335,16 @@ enum EmploymentStatus {
   active
   resigned
   terminated
+
+  @@schema("payroll")
 }
 
 enum PayFrequency {
   monthly
   semi_monthly
   weekly
+
+  @@schema("payroll")
 }
 
 model Employee {
@@ -354,6 +376,8 @@ enum PayrollRunStatus {
   processing
   finalized
   paid
+
+  @@schema("payroll")
 }
 
 model PayrollRun {
@@ -441,11 +465,15 @@ enum ComputationType {
   percentage_tax
   ewt
   withholding_comp
+
+  @@schema("tax_engine")
 }
 
 enum ComputationStatus {
   draft
   confirmed
+
+  @@schema("tax_engine")
 }
 
 model TaxComputation {
@@ -477,6 +505,8 @@ enum Agency {
   philhealth
   pagibig
   lgu
+
+  @@schema("compliance")
 }
 
 enum FilingStatus {
@@ -484,6 +514,8 @@ enum FilingStatus {
   due_today
   overdue
   filed
+
+  @@schema("compliance")
 }
 
 model FilingDeadline {
@@ -529,6 +561,8 @@ enum IssueType {
   computation_error
   missing_info
   other_risk
+
+  @@schema("compliance")
 }
 
 enum IssueSeverity {
@@ -536,6 +570,8 @@ enum IssueSeverity {
   medium
   high
   critical
+
+  @@schema("compliance")
 }
 
 enum IssueStatus {
@@ -543,6 +579,8 @@ enum IssueStatus {
   acknowledged
   resolved
   dismissed
+
+  @@schema("compliance")
 }
 
 model FlaggedIssue {
@@ -665,12 +703,16 @@ model AiConversation {
 enum MessageSender {
   user
   assistant
+
+  @@schema("ai")
 }
 
 enum ConfidenceFlag {
   grounded
   low_confidence
   missing_info
+
+  @@schema("ai")
 }
 
 model AiMessage {
@@ -697,6 +739,8 @@ enum NotificationChannel {
   sms
   push
   in_app
+
+  @@schema("notifications")
 }
 
 enum NotificationStatus {
@@ -704,6 +748,8 @@ enum NotificationStatus {
   sent
   failed
   read
+
+  @@schema("notifications")
 }
 
 model Notification {
