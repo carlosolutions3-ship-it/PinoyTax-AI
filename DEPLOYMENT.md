@@ -52,8 +52,9 @@ Omit `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` to skip creating a platform admin 
 # API + worker (same image, different entrypoint)
 docker build -t pinoytax-api:latest ./apps/api
 
-# Frontend (once apps/web/Dockerfile exists — see CHANGELOG.md)
-docker build -t pinoytax-web:latest ./apps/web
+# Frontend
+docker build -t pinoytax-web:latest ./apps/web \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.yourdomain.com/v1
 ```
 
 Push to your registry and deploy via your orchestrator of choice (Kubernetes, ECS, etc.). The provided `docker-compose.yml` is intended for local development and staging smoke-tests, not as a production deployment mechanism.

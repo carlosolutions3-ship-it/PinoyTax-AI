@@ -68,5 +68,5 @@ Work through this in order. Do not skip the "Verification-only" items just becau
 ## 7. Frontend completeness (if launching beyond the compliance dashboard)
 
 - [ ] Payroll, tax computation, documents, and AI Assistant frontend pages built (backend APIs are complete; UI is not — see `CHANGELOG.md`)
-- [ ] `apps/web/Dockerfile` created and the `web` service re-enabled in `docker-compose.yml`
-- [ ] Frontend build (`npm run build --workspace=apps/web`) verified to actually produce a working standalone output
+- [x] `apps/web/Dockerfile` created and the `web` service re-enabled in `docker-compose.yml`
+- [x] Frontend build (`npm run build --workspace=apps/web`) verified to actually produce a working standalone output
