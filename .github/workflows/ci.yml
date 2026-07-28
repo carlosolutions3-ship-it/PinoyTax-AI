@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (build, lint, test, migrations)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: pinoytax
+          POSTGRES_PASSWORD: pinoytax_ci_password
+          POSTGRES_DB: pinoytax_ai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pinoytax"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://pinoytax:pinoytax_ci_password@localhost:5432/pinoytax_ai
+      JWT_ACCESS_SECRET: ci_test_access_secret_not_for_production
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_REFRESH_EXPIRES_IN_REMEMBER_ME: 30d
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+      - name: Apply migrations to a disposable database
+        run: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+
+      - name: Build
+        run: npm run build --workspace=apps/api
+
+      - name: Lint
+        working-directory: apps/api
+        run: npx eslint "{src,test}/**/*.ts" --max-warnings=0
+
+      - name: Unit tests
+        run: npm test --workspace=apps/api
+
+  web:
+    name: Web (build, lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build --workspace=apps/web
+
+      - name: Lint
+        working-directory: apps/web
+        run: npx next lint --max-warnings=0
