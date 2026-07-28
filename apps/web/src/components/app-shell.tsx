@@ -21,6 +21,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/forms" className="text-sm font-medium text-slate-600 hover:text-slate-900">
               Forms library
             </Link>
+            {user?.isPlatformAdmin && (
+              <Link href="/admin" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+                Admin
+              </Link>
+            )}
           </div>
           <div className="flex items-center gap-4">
             {user && (
