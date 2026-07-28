@@ -10,6 +10,9 @@ import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 import { EmptyState } from '@/components/empty-state';
 import { TableSkeleton } from '@/components/skeleton';
+import { SearchInput } from '@/components/search-input';
+import { Pagination } from '@/components/pagination';
+import { usePagination } from '@/hooks/use-pagination';
 import { documentsApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
@@ -65,6 +68,7 @@ function DocumentsContent({ companyId }: { companyId: string }) {
   const [documents, setDocuments] = useState<VaultDocument[]>([]);
   const [folderFilter, setFolderFilter] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNewFolder, setShowNewFolder] = useState(false);
@@ -101,8 +105,12 @@ function DocumentsContent({ companyId }: { companyId: string }) {
   }
 
   const visibleDocuments = documents.filter(
-    (d) => (!folderFilter || d.folderId === folderFilter) && (!categoryFilter || d.category === categoryFilter),
+    (d) =>
+      (!folderFilter || d.folderId === folderFilter) &&
+      (!categoryFilter || d.category === categoryFilter) &&
+      (!search.trim() || d.fileName.toLowerCase().includes(search.trim().toLowerCase())),
   );
+  const { page, setPage, totalPages, pageItems } = usePagination(visibleDocuments, 10);
 
   return (
     <div className="flex flex-col gap-6">
@@ -148,6 +156,16 @@ function DocumentsContent({ companyId }: { companyId: string }) {
       <Card>
         <div className="mb-4 flex flex-wrap items-end gap-4">
           <Field>
+            <Label htmlFor="documentSearch">Search</Label>
+            <SearchInput
+              id="documentSearch"
+              placeholder="Search by file name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-56"
+            />
+          </Field>
+          <Field>
             <Label htmlFor="folderFilter">Folder</Label>
             <Select id="folderFilter" value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)}>
               <option value="">All folders</option>
@@ -176,11 +194,22 @@ function DocumentsContent({ companyId }: { companyId: string }) {
         ) : visibleDocuments.length === 0 ? (
           <EmptyState title="No documents found" description="No documents match these filters yet." />
         ) : (
-          <ul className="flex flex-col gap-2">
-            {visibleDocuments.map((doc) => (
-              <DocumentRow key={doc.id} companyId={companyId} doc={doc} onDownload={() => handleDownload(doc.id)} />
-            ))}
-          </ul>
+          <>
+            <ul className="flex flex-col gap-2">
+              {pageItems.map((doc) => (
+                <DocumentRow key={doc.id} companyId={companyId} doc={doc} onDownload={() => handleDownload(doc.id)} />
+              ))}
+            </ul>
+            <div className="mt-4">
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onChange={setPage}
+                totalItems={visibleDocuments.length}
+                pageSize={10}
+              />
+            </div>
+          </>
         )}
       </Card>
     </div>

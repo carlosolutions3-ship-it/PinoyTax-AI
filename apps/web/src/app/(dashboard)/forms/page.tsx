@@ -5,6 +5,8 @@ import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { Badge, Card, ErrorText, Field, Label, Select } from '@/components/ui';
 import { Button } from '@/components/button';
+import { EmptyState } from '@/components/empty-state';
+import { SearchInput } from '@/components/search-input';
 import { formsApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import type { Agency, FormTemplate } from '@/lib/types';
@@ -30,6 +32,7 @@ export default function FormsLibraryPage() {
 function FormsLibraryContent() {
   const [forms, setForms] = useState<FormTemplate[]>([]);
   const [agencyFilter, setAgencyFilter] = useState<string>('');
+  const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingCode, setDownloadingCode] = useState<string | null>(null);
@@ -63,32 +66,56 @@ function FormsLibraryContent() {
     }
   }
 
+  const visibleForms = forms.filter((f) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      f.formCode.toLowerCase().includes(q) ||
+      f.title.toLowerCase().includes(q) ||
+      (f.description?.toLowerCase().includes(q) ?? false)
+    );
+  });
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Government forms library</h1>
       <ErrorText>{error}</ErrorText>
 
       <Card>
-        <Field>
-          <Label htmlFor="agencyFilter">Agency</Label>
-          <Select id="agencyFilter" value={agencyFilter} onChange={(e) => setAgencyFilter(e.target.value)}>
-            <option value="">All agencies</option>
-            {Object.entries(AGENCY_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <div className="flex flex-wrap items-end gap-4">
+          <Field>
+            <Label htmlFor="formSearch">Search</Label>
+            <SearchInput
+              id="formSearch"
+              placeholder="Search by form code or title…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-64"
+            />
+          </Field>
+          <Field>
+            <Label htmlFor="agencyFilter">Agency</Label>
+            <Select id="agencyFilter" value={agencyFilter} onChange={(e) => setAgencyFilter(e.target.value)}>
+              <option value="">All agencies</option>
+              {Object.entries(AGENCY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
       </Card>
 
       {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-      {!isLoading && forms.length === 0 && (
-        <Card className="text-sm text-slate-500">No forms found for this filter.</Card>
+      {!isLoading && visibleForms.length === 0 && (
+        <Card>
+          <EmptyState title="No forms found" description="Try a different search term or agency filter." />
+        </Card>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {forms.map((form) => (
+        {visibleForms.map((form) => (
           <Card key={form.id}>
             <div className="flex items-start justify-between">
               <div>

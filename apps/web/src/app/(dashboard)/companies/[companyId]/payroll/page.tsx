@@ -11,6 +11,9 @@ import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 import { EmptyState } from '@/components/empty-state';
 import { TableSkeleton } from '@/components/skeleton';
+import { SearchInput } from '@/components/search-input';
+import { Pagination } from '@/components/pagination';
+import { usePagination } from '@/hooks/use-pagination';
 import { payrollApi, CreateEmployeeInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -43,6 +46,8 @@ function PayrollContent({ companyId }: { companyId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [showCreateRun, setShowCreateRun] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [runStatusFilter, setRunStatusFilter] = useState<PayrollRunStatus | ''>('');
 
   const loadAll = useCallback(async () => {
     setIsLoading(true);
@@ -64,6 +69,20 @@ function PayrollContent({ companyId }: { companyId: string }) {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  const filteredEmployees = employees.filter((e) => {
+    if (!employeeSearch.trim()) return true;
+    const q = employeeSearch.trim().toLowerCase();
+    return `${e.firstName} ${e.lastName}`.toLowerCase().includes(q);
+  });
+  const {
+    page: employeePage,
+    setPage: setEmployeePage,
+    totalPages: employeeTotalPages,
+    pageItems: employeePageItems,
+  } = usePagination(filteredEmployees, 10);
+
+  const filteredRuns = runs.filter((r) => !runStatusFilter || r.status === runStatusFilter);
 
   return (
     <div className="flex flex-col gap-6">
@@ -93,10 +112,23 @@ function PayrollContent({ companyId }: { companyId: string }) {
           />
         )}
 
+        {!isLoading && employees.length > 0 && (
+          <div className="mb-4">
+            <SearchInput
+              placeholder="Search employees by name…"
+              value={employeeSearch}
+              onChange={(e) => setEmployeeSearch(e.target.value)}
+              className="max-w-xs"
+            />
+          </div>
+        )}
+
         {isLoading ? (
           <TableSkeleton columns={7} />
         ) : employees.length === 0 ? (
           <EmptyState title="No employees yet" description="Add your first employee to start running payroll." />
+        ) : filteredEmployees.length === 0 ? (
+          <EmptyState title="No matching employees" description="Try a different search term." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -112,7 +144,7 @@ function PayrollContent({ companyId }: { companyId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {employees.map((e) => (
+                {employeePageItems.map((e) => (
                   <tr key={e.id} className="border-b border-slate-100 last:border-0">
                     <td className="py-2 pr-4 font-medium">
                       {e.firstName} {e.lastName}
@@ -131,16 +163,40 @@ function PayrollContent({ companyId }: { companyId: string }) {
                 ))}
               </tbody>
             </table>
+            <div className="mt-4">
+              <Pagination
+                page={employeePage}
+                totalPages={employeeTotalPages}
+                onChange={setEmployeePage}
+                totalItems={filteredEmployees.length}
+                pageSize={10}
+              />
+            </div>
           </div>
         )}
       </Card>
 
       <Card>
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-semibold">Payroll runs</h2>
-          <Button variant="secondary" onClick={() => setShowCreateRun((v) => !v)}>
-            {showCreateRun ? 'Cancel' : 'New payroll run'}
-          </Button>
+          <div className="flex items-center gap-2">
+            {runs.length > 0 && (
+              <Select
+                value={runStatusFilter}
+                onChange={(e) => setRunStatusFilter(e.target.value as PayrollRunStatus | '')}
+                className="w-40"
+              >
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="processing">Processing</option>
+                <option value="finalized">Finalized</option>
+                <option value="paid">Paid</option>
+              </Select>
+            )}
+            <Button variant="secondary" onClick={() => setShowCreateRun((v) => !v)}>
+              {showCreateRun ? 'Cancel' : 'New payroll run'}
+            </Button>
+          </div>
         </div>
 
         {showCreateRun && (
@@ -157,9 +213,11 @@ function PayrollContent({ companyId }: { companyId: string }) {
           <TableSkeleton rows={3} columns={2} />
         ) : runs.length === 0 ? (
           <EmptyState title="No payroll runs yet" description="Create a run to process pay for this period." />
+        ) : filteredRuns.length === 0 ? (
+          <EmptyState title="No matching runs" description="Try a different status filter." />
         ) : (
           <ul className="flex flex-col gap-2">
-            {runs.map((run) => (
+            {filteredRuns.map((run) => (
               <li key={run.id}>
                 <Link
                   href={`/companies/${companyId}/payroll/${run.id}`}

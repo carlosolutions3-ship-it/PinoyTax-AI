@@ -10,6 +10,8 @@ import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 import { EmptyState } from '@/components/empty-state';
 import { TableSkeleton } from '@/components/skeleton';
+import { Pagination } from '@/components/pagination';
+import { usePagination } from '@/hooks/use-pagination';
 import { taxApi, ComputeTaxInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -46,6 +48,8 @@ function TaxContent({ companyId }: { companyId: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<ComputationType | ''>('');
+  const [statusFilter, setStatusFilter] = useState<ComputationStatus | ''>('');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -63,6 +67,11 @@ function TaxContent({ companyId }: { companyId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const filteredComputations = computations.filter(
+    (c) => (!typeFilter || c.computationType === typeFilter) && (!statusFilter || c.status === statusFilter),
+  );
+  const { page, setPage, totalPages, pageItems } = usePagination(filteredComputations, 10);
 
   async function handleConfirm(id: string) {
     setConfirmingId(id);
@@ -89,11 +98,40 @@ function TaxContent({ companyId }: { companyId: string }) {
       <ComputeTaxForm companyId={companyId} onComputed={load} />
 
       <Card>
-        <h2 className="mb-4 font-semibold">History</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold">History</h2>
+          {computations.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value as ComputationType | '')}
+                className="w-48"
+              >
+                <option value="">All types</option>
+                {Object.entries(TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as ComputationStatus | '')}
+                className="w-36"
+              >
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="confirmed">Confirmed</option>
+              </Select>
+            </div>
+          )}
+        </div>
         {isLoading ? (
           <TableSkeleton columns={5} />
         ) : computations.length === 0 ? (
           <EmptyState title="No tax computations yet" description="Run your first computation above." />
+        ) : filteredComputations.length === 0 ? (
+          <EmptyState title="No matching computations" description="Try different filters." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -107,7 +145,7 @@ function TaxContent({ companyId }: { companyId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {computations.map((c) => (
+                {pageItems.map((c) => (
                   <tr key={c.id} className="border-b border-slate-100 align-top last:border-0">
                     <td className="py-2 pr-4 font-medium">{TYPE_LABELS[c.computationType]}</td>
                     <td className="py-2 pr-4 text-slate-500">
@@ -141,6 +179,15 @@ function TaxContent({ companyId }: { companyId: string }) {
                 ))}
               </tbody>
             </table>
+            <div className="mt-4">
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onChange={setPage}
+                totalItems={filteredComputations.length}
+                pageSize={10}
+              />
+            </div>
           </div>
         )}
       </Card>
