@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
-import { Badge, Card, ErrorText } from '@/components/ui';
+import { Badge, Card, ErrorText, Select } from '@/components/ui';
+import { EmptyState } from '@/components/empty-state';
+import { Pagination } from '@/components/pagination';
+import { usePagination } from '@/hooks/use-pagination';
 import { notificationsApi, usersApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/format';
@@ -45,6 +48,7 @@ function NotificationsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<NotificationStatus | ''>('');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -70,6 +74,9 @@ function NotificationsContent() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const filteredNotifications = notifications.filter((n) => !statusFilter || n.status === statusFilter);
+  const { page, setPage, totalPages, pageItems } = usePagination(filteredNotifications, 10);
 
   function preferenceFor(channel: NotificationChannel, category: string): boolean {
     const match = preferences.find((p) => p.channel === channel && p.category === category);
@@ -147,25 +154,53 @@ function NotificationsContent() {
       </Card>
 
       <Card>
-        <h2 className="mb-4 font-semibold">Recent notifications</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold">Recent notifications</h2>
+          {notifications.length > 0 && (
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as NotificationStatus | '')}
+              className="w-36"
+            >
+              <option value="">All statuses</option>
+              <option value="queued">Queued</option>
+              <option value="sent">Sent</option>
+              <option value="failed">Failed</option>
+              <option value="read">Read</option>
+            </Select>
+          )}
+        </div>
         {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
         {!isLoading && notifications.length === 0 ? (
-          <p className="text-sm text-slate-500">No notifications yet.</p>
+          <EmptyState title="No notifications yet" description="Filing reminders and alerts will appear here." />
+        ) : !isLoading && filteredNotifications.length === 0 ? (
+          <EmptyState title="No matching notifications" description="Try a different status filter." />
         ) : (
-          <ul className="flex flex-col gap-3">
-            {notifications.map((n) => (
-              <li key={n.id} className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 last:border-0">
-                <div>
-                  <p className="font-medium">{n.title}</p>
-                  <p className="text-sm text-slate-600">{n.body}</p>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {CHANNEL_LABELS[n.channel]} · {formatDateTime(n.sentAt ?? n.scheduledFor)}
-                  </p>
-                </div>
-                <Badge tone={STATUS_TONE[n.status]}>{n.status}</Badge>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="flex flex-col gap-3">
+              {pageItems.map((n) => (
+                <li key={n.id} className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 last:border-0">
+                  <div>
+                    <p className="font-medium">{n.title}</p>
+                    <p className="text-sm text-slate-600">{n.body}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {CHANNEL_LABELS[n.channel]} · {formatDateTime(n.sentAt ?? n.scheduledFor)}
+                    </p>
+                  </div>
+                  <Badge tone={STATUS_TONE[n.status]}>{n.status}</Badge>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4">
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onChange={setPage}
+                totalItems={filteredNotifications.length}
+                pageSize={10}
+              />
+            </div>
+          </>
         )}
       </Card>
     </div>
