@@ -3,6 +3,7 @@ import type {
   AiConversation,
   AiMessage,
   AuditLog,
+  Branch,
   Company,
   ComplianceStatus,
   Employee,
@@ -95,6 +96,31 @@ export const companiesApi = {
     api.post(`/companies/${companyId}/invitations`, input),
   acceptInvitation: (invitationId: string) =>
     api.post(`/companies/invitations/${invitationId}/accept`),
+};
+
+// ---------------------------------------------------------------------------
+// branches
+// ---------------------------------------------------------------------------
+
+export interface CreateBranchInput {
+  branchName: string;
+  branchAddress?: string;
+  rdoCode?: string;
+}
+
+export interface UpdateBranchInput {
+  branchName?: string;
+  branchAddress?: string;
+  rdoCode?: string;
+  status?: 'active' | 'inactive';
+}
+
+export const branchesApi = {
+  list: (companyId: string) => api.get<Branch[]>(`/companies/${companyId}/branches`),
+  create: (companyId: string, input: CreateBranchInput) =>
+    api.post<Branch>(`/companies/${companyId}/branches`, input),
+  update: (companyId: string, branchId: string, input: UpdateBranchInput) =>
+    api.patch<Branch>(`/companies/${companyId}/branches/${branchId}`, input),
 };
 
 // ---------------------------------------------------------------------------

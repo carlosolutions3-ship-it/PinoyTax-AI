@@ -7,10 +7,11 @@ import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
-import { companiesApi, UpdateCompanyInput } from '@/lib/endpoints';
+import { branchesApi, companiesApi, CreateBranchInput, UpdateCompanyInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { omitEmptyStrings } from '@/lib/forms';
-import type { Company } from '@/lib/types';
+import { Badge } from '@/components/ui';
+import type { Branch, Company } from '@/lib/types';
 
 export default function SettingsPage() {
   const { companyId } = useParams<{ companyId: string }>();
@@ -54,6 +55,8 @@ function SettingsContent({ companyId }: { companyId: string }) {
       <ErrorText>{error}</ErrorText>
 
       {company && <CompanyProfileForm company={company} onSaved={setCompany} />}
+
+      <BranchesSection companyId={companyId} />
 
       <InviteStaffForm companyId={companyId} />
     </div>
@@ -157,6 +160,152 @@ function CompanyProfileForm({ company, onSaved }: { company: Company; onSaved: (
         </div>
       </form>
     </Card>
+  );
+}
+
+function BranchesSection({ companyId }: { companyId: string }) {
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const result = await branchesApi.list(companyId);
+      setBranches(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load branches.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function toggleStatus(branch: Branch) {
+    setTogglingId(branch.id);
+    try {
+      const nextStatus = branch.status === 'active' ? 'inactive' : 'active';
+      const updated = await branchesApi.update(companyId, branch.id, { status: nextStatus });
+      setBranches((prev) => prev.map((b) => (b.id === branch.id ? updated : b)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update branch.');
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="font-semibold">Branches</h2>
+        <Button variant="secondary" onClick={() => setShowAdd((v) => !v)}>
+          {showAdd ? 'Cancel' : 'Add branch'}
+        </Button>
+      </div>
+      <ErrorText>{error}</ErrorText>
+
+      {showAdd && (
+        <AddBranchForm
+          companyId={companyId}
+          onCreated={() => {
+            setShowAdd(false);
+            load();
+          }}
+        />
+      )}
+
+      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {!isLoading && branches.length === 0 ? (
+        <p className="text-sm text-slate-500">No branches yet — this company operates from its main address only.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {branches.map((branch) => (
+            <li
+              key={branch.id}
+              className="flex items-center justify-between gap-4 rounded-md border border-slate-200 px-4 py-3 text-sm"
+            >
+              <div>
+                <p className="font-medium">{branch.branchName}</p>
+                <p className="text-xs text-slate-500">
+                  {branch.branchAddress ?? 'No address on file'}
+                  {branch.rdoCode ? ` · RDO ${branch.rdoCode}` : ''}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge tone={branch.status === 'active' ? 'green' : 'slate'}>{branch.status}</Badge>
+                <Button variant="ghost" onClick={() => toggleStatus(branch)} isLoading={togglingId === branch.id}>
+                  {branch.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function AddBranchForm({ companyId, onCreated }: { companyId: string; onCreated: () => void }) {
+  const [form, setForm] = useState<CreateBranchInput>({ branchName: '', branchAddress: '', rdoCode: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await branchesApi.create(companyId, omitEmptyStrings(form) as CreateBranchInput);
+      onCreated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to add branch.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mb-4 grid gap-4 rounded-md border border-slate-200 p-4 sm:grid-cols-3">
+      <Field>
+        <Label htmlFor="branchName">Branch name</Label>
+        <Input
+          id="branchName"
+          required
+          value={form.branchName}
+          onChange={(e) => setForm({ ...form, branchName: e.target.value })}
+        />
+      </Field>
+      <Field>
+        <Label htmlFor="branchAddress">Address</Label>
+        <Input
+          id="branchAddress"
+          value={form.branchAddress}
+          onChange={(e) => setForm({ ...form, branchAddress: e.target.value })}
+        />
+      </Field>
+      <Field>
+        <Label htmlFor="branchRdoCode">RDO code</Label>
+        <Input
+          id="branchRdoCode"
+          value={form.rdoCode}
+          onChange={(e) => setForm({ ...form, rdoCode: e.target.value })}
+        />
+      </Field>
+      <div className="sm:col-span-3">
+        <ErrorText>{error}</ErrorText>
+      </div>
+      <div className="sm:col-span-3">
+        <Button type="submit" isLoading={isSubmitting}>
+          Add branch
+        </Button>
+      </div>
+    </form>
   );
 }
 
