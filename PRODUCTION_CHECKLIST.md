@@ -1,16 +1,16 @@
 # Production Deployment Checklist
 
-Work through this in order. Do not skip the "Verification-only" items just because the code exists — nothing in this repository has been compiled or run in the environment it was built in (no network access was available), so this checklist assumes today is the first time it will actually execute.
+Work through this in order before deploying to a real production environment. As of v1.0, every item in §0 below has been verified at least once in a disposable sandbox (build, migrate, seed, boot, and a full authenticated browser walkthrough) — re-run them yourself against your own target infrastructure before going live, since a sandbox pass does not substitute for verifying against your actual production database, secrets, and network.
 
 ## 0. First execution (do this before anything else)
 
-- [ ] Run `npm install --workspaces` and resolve any dependency version conflicts npm surfaces
-- [ ] Run `npx prisma generate` and confirm the Prisma Client builds against `schema.prisma` without errors
-- [ ] Run `npm run build` for `apps/api` and confirm a clean TypeScript compile
-- [ ] Run `npx prisma migrate deploy` against a real disposable Postgres instance and confirm every migration in `apps/api/prisma/migrations/` applies cleanly, in order, with no errors
-- [ ] Boot the API (`node dist/main.js`) against that database and confirm `/health` returns 200
-- [ ] Run `npm run prisma:seed` and confirm roles/permissions/tax rules/form templates load without error
-- [ ] Manually exercise the flow in `INSTALL.md` §7 end to end (register → verify → login → create company → run compliance scan) with the worker process also running
+- [x] Run `npm install --workspaces` and resolve any dependency version conflicts npm surfaces
+- [x] Run `npx prisma generate` and confirm the Prisma Client builds against `schema.prisma` without errors
+- [x] Run `npm run build` for `apps/api` and confirm a clean TypeScript compile
+- [x] Run `npx prisma migrate deploy` against a real disposable Postgres instance and confirm every migration in `apps/api/prisma/migrations/` applies cleanly, in order, with no errors
+- [x] Boot the API (`node dist/main.js`) against that database and confirm `/health` returns 200
+- [x] Run `npm run prisma:seed` and confirm roles/permissions/tax rules/form templates load without error
+- [x] Manually exercise the flow in `INSTALL.md` §7 end to end (register → verify → login → create company → run compliance scan) with the worker process also running
 
 ## 1. Secrets & configuration
 
@@ -65,8 +65,11 @@ Work through this in order. Do not skip the "Verification-only" items just becau
 - [ ] A schedule for re-verifying seeded tax rates against regulatory changes is established (rates and brackets do change; nothing in this codebase auto-updates them)
 - [ ] Penetration test scheduled, ideally before onboarding real paying customers with real financial data
 
-## 7. Frontend completeness (if launching beyond the compliance dashboard)
+## 7. Frontend completeness
 
-- [ ] Payroll, tax computation, documents, and AI Assistant frontend pages built (backend APIs are complete; UI is not — see `CHANGELOG.md`)
+- [x] Payroll, tax computation, documents, AI Assistant, reports, roles & permissions, and settings frontend pages built
 - [x] `apps/web/Dockerfile` created and the `web` service re-enabled in `docker-compose.yml`
 - [x] Frontend build (`npm run build --workspace=apps/web`) verified to actually produce a working standalone output
+- [x] Responsive layout verified at desktop, tablet, and mobile viewports
+
+See `KNOWN_LIMITATIONS.md` for what's intentionally still out of scope for v1.0.
