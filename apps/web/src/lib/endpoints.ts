@@ -16,6 +16,7 @@ import type {
   MyCompanyEntry,
   NotificationItem,
   NotificationPreference,
+  PendingInvitation,
   PayrollRun,
   PayrollRunDetail,
   Payslip,
@@ -95,8 +96,9 @@ export const companiesApi = {
     api.patch<Company>(`/companies/${companyId}`, input),
   inviteStaff: (companyId: string, input: { email: string; roleCode: 'accountant' | 'bookkeeper' }) =>
     api.post(`/companies/${companyId}/invitations`, input),
+  listMyInvitations: () => api.get<PendingInvitation[]>('/companies/invitations/mine'),
   acceptInvitation: (invitationId: string) =>
-    api.post(`/companies/invitations/${invitationId}/accept`),
+    api.post<StaffEntry>(`/companies/invitations/${invitationId}/accept`),
   listStaff: (companyId: string) => api.get<StaffEntry[]>(`/companies/${companyId}/staff`),
   revokeStaff: (companyId: string, userCompanyRoleId: string) =>
     api.delete<StaffEntry>(`/companies/${companyId}/staff/${userCompanyRoleId}`),

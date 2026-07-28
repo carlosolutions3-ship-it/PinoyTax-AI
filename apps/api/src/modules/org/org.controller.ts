@@ -49,6 +49,11 @@ export class OrgController {
     return this.orgService.inviteStaff(companyId, user.id, dto);
   }
 
+  @Get('invitations/mine')
+  async listMyInvitations(@CurrentUser() user: AuthenticatedUser) {
+    return this.orgService.listMyInvitations(user.id);
+  }
+
   @Post('invitations/:invitationId/accept')
   async acceptInvitation(
     @CurrentUser() user: AuthenticatedUser,

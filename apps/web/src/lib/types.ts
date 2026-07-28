@@ -69,6 +69,15 @@ export interface MyCompanyEntry {
   role: string;
 }
 
+export interface PendingInvitation {
+  id: UUID;
+  companyId: UUID;
+  invitedAt: string;
+  company: { id: UUID; businessName: string; tradeName: string | null };
+  role: { code: string; name: string };
+  invitedBy: { firstName: string; lastName: string; email: string } | null;
+}
+
 export type EmploymentStatus = 'active' | 'resigned' | 'terminated';
 export type PayFrequency = 'monthly' | 'semi_monthly' | 'weekly';
 

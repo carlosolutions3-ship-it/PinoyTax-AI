@@ -1,17 +1,28 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Mail } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { useMyCompanies } from '@/hooks/use-my-companies';
 import { companiesApi, CreateCompanyInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { omitEmptyStrings } from '@/lib/forms';
+import { formatDate } from '@/lib/format';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 import { EmptyState } from '@/components/empty-state';
 import { CardSkeleton } from '@/components/skeleton';
+import type { PendingInvitation } from '@/lib/types';
+
+const ROLE_LABELS: Record<string, string> = {
+  accountant: 'Accountant',
+  bookkeeper: 'Bookkeeper',
+  firm_admin: 'Firm admin',
+  business_owner: 'Business owner',
+  administrator: 'Administrator',
+};
 
 export default function CompaniesPage() {
   return (
@@ -35,6 +46,8 @@ function CompaniesContent() {
           {showCreate ? 'Cancel' : 'Add company'}
         </Button>
       </div>
+
+      <PendingInvitations onAccepted={reload} />
 
       {showCreate && (
         <CreateCompanyForm
@@ -201,6 +214,85 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
           </Button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+function PendingInvitations({ onAccepted }: { onAccepted: () => void }) {
+  const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const result = await companiesApi.listMyInvitations();
+      setInvitations(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load invitations.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleAccept(invitationId: string) {
+    setAcceptingId(invitationId);
+    try {
+      await companiesApi.acceptInvitation(invitationId);
+      setInvitations((prev) => prev.filter((i) => i.id !== invitationId));
+      onAccepted();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to accept invitation.');
+    } finally {
+      setAcceptingId(null);
+    }
+  }
+
+  if (isLoading || invitations.length === 0) return null;
+
+  return (
+    <Card className="border-accent-200 bg-accent-50/40">
+      <div className="mb-3 flex items-center gap-2">
+        <Mail className="h-4 w-4 text-accent-600" aria-hidden="true" />
+        <h2 className="font-semibold text-slate-900">
+          Pending invitation{invitations.length > 1 ? 's' : ''}
+        </h2>
+      </div>
+      <ErrorText>{error}</ErrorText>
+      <ul className="flex flex-col gap-2">
+        {invitations.map((invite) => (
+          <li
+            key={invite.id}
+            className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <p className="font-medium text-slate-900">
+                {invite.company.businessName}
+                {invite.company.tradeName ? ` (${invite.company.tradeName})` : ''}
+              </p>
+              <p className="text-xs text-slate-500">
+                Invited as {ROLE_LABELS[invite.role.code] ?? invite.role.name}
+                {invite.invitedBy ? ` by ${invite.invitedBy.firstName} ${invite.invitedBy.lastName}` : ''} ·{' '}
+                {formatDate(invite.invitedAt)}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => handleAccept(invite.id)}
+              isLoading={acceptingId === invite.id}
+              className="self-start sm:self-auto"
+            >
+              Accept
+            </Button>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
