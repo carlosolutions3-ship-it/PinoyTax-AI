@@ -2,15 +2,29 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import {
+  AlertTriangle,
+  CalendarClock,
+  FolderOpen,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  Calculator,
+} from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText } from '@/components/ui';
-import { BarChart, ProgressBar } from '@/components/charts';
-import { complianceApi } from '@/lib/endpoints';
+import { BarChart } from '@/components/charts';
+import { StatCard } from '@/components/stat-card';
+import { CardSkeleton } from '@/components/skeleton';
+import { useAuth } from '@/lib/auth-context';
+import { complianceApi, companiesApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
-import type { ComplianceStatus, FilingDeadline, FlaggedIssue, IssueStatus } from '@/lib/types';
+import { formatDate } from '@/lib/format';
+import type { Company, ComplianceStatus, FilingDeadline, FlaggedIssue, IssueStatus } from '@/lib/types';
 
 const SEVERITY_TONE: Record<string, 'slate' | 'green' | 'amber' | 'red' | 'blue'> = {
   low: 'slate',
@@ -26,6 +40,20 @@ const DEADLINE_TONE: Record<string, 'slate' | 'green' | 'amber' | 'red' | 'blue'
   filed: 'green',
 };
 
+const QUICK_ACTIONS = [
+  { href: '/payroll', label: 'Run payroll', description: 'Process pay runs & payslips', icon: Users },
+  { href: '/tax', label: 'Compute tax', description: 'BIR income tax, VAT & EWT', icon: Calculator },
+  { href: '/documents', label: 'Upload document', description: 'Add receipts, filings & records', icon: FolderOpen },
+  { href: '/ai-assistant', label: 'Ask AI assistant', description: 'Get instant tax guidance', icon: Sparkles },
+];
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export default function CompanyDashboardPage() {
   const { companyId } = useParams<{ companyId: string }>();
 
@@ -40,6 +68,8 @@ export default function CompanyDashboardPage() {
 }
 
 function DashboardContent({ companyId }: { companyId: string }) {
+  const { user } = useAuth();
+  const [company, setCompany] = useState<Company | null>(null);
   const [status, setStatus] = useState<ComplianceStatus[]>([]);
   const [deadlines, setDeadlines] = useState<FilingDeadline[]>([]);
   const [issues, setIssues] = useState<FlaggedIssue[]>([]);
@@ -50,11 +80,13 @@ function DashboardContent({ companyId }: { companyId: string }) {
   const loadAll = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [statusRes, deadlinesRes, issuesRes] = await Promise.all([
+      const [companyRes, statusRes, deadlinesRes, issuesRes] = await Promise.all([
+        companiesApi.getOne(companyId),
         complianceApi.getStatus(companyId),
         complianceApi.getDeadlines(companyId),
         complianceApi.getFlaggedIssues(companyId),
       ]);
+      setCompany(companyRes);
       setStatus(statusRes);
       setDeadlines(deadlinesRes);
       setIssues(issuesRes);
@@ -96,42 +128,87 @@ function DashboardContent({ companyId }: { companyId: string }) {
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 8);
 
+  const overdueCount = deadlines.filter((d) => d.status === 'overdue').length;
   const openIssues = issues.filter((i) => i.status === 'open' || i.status === 'acknowledged');
+  const avgCompliance =
+    status.length > 0
+      ? Math.round(status.reduce((sum, s) => sum + Number(s.compliancePercentage), 0) / status.length)
+      : null;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Compliance dashboard</h1>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            {getGreeting()}
+            {user ? `, ${user.firstName}` : ''}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {company ? company.businessName : 'Loading your business overview…'}
+          </p>
+        </div>
         <Button onClick={handleScan} isLoading={isScanning} variant="secondary">
           Run compliance scan
         </Button>
       </div>
 
       <ErrorText>{error}</ErrorText>
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {status.length === 0 && !isLoading && (
-          <Card className="sm:col-span-2 lg:col-span-4 text-sm text-slate-500">
-            No compliance status yet — run a compliance scan to generate your filing calendar.
-          </Card>
-        )}
-        {status.map((s) => (
-          <Card key={s.id}>
-            <p className="text-xs uppercase tracking-wide text-slate-500">{s.category}</p>
-            <p className="mt-1 text-2xl font-semibold">{s.compliancePercentage}%</p>
-            <div className="mt-2">
-              <ProgressBar
-                value={Number(s.compliancePercentage)}
-                color={s.overdueCount > 0 ? '#e11d48' : '#1d4ed8'}
-                label={`${s.compliancePercentage}% complete`}
-              />
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {s.completedCount} completed · {s.pendingCount} pending · {s.overdueCount} overdue
-            </p>
-          </Card>
-        ))}
+      {isLoading ? (
+        <CardSkeleton count={4} />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Compliance score"
+            value={avgCompliance !== null ? `${avgCompliance}%` : '—'}
+            icon={ShieldCheck}
+            tone={avgCompliance !== null && avgCompliance < 70 ? 'red' : 'brand'}
+            helpText={status.length > 0 ? `Across ${status.length} categories` : 'Run a scan to get started'}
+          />
+          <StatCard
+            label="Open issues"
+            value={String(openIssues.length)}
+            icon={AlertTriangle}
+            tone={openIssues.length > 0 ? 'amber' : 'brand'}
+            helpText={openIssues.length > 0 ? 'Needs your attention' : 'All clear'}
+          />
+          <StatCard
+            label="Upcoming deadlines"
+            value={String(upcomingDeadlines.length)}
+            icon={CalendarClock}
+            tone="accent"
+            helpText="Next filings due"
+          />
+          <StatCard
+            label="Overdue filings"
+            value={String(overdueCount)}
+            icon={AlertTriangle}
+            tone={overdueCount > 0 ? 'red' : 'brand'}
+            helpText={overdueCount > 0 ? 'Past due date' : 'Nothing overdue'}
+          />
+        </div>
+      )}
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Quick actions</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {QUICK_ACTIONS.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.href}
+                href={`/companies/${companyId}${action.href}`}
+                className="group rounded-xl border border-slate-200 bg-white p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-popover"
+              >
+                <span className="inline-flex rounded-lg bg-brand-50 p-2.5 text-brand-600 transition-colors group-hover:bg-brand-100">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <p className="mt-3 font-medium text-slate-900">{action.label}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{action.description}</p>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       {issues.length > 0 && (
@@ -162,7 +239,7 @@ function DashboardContent({ companyId }: { companyId: string }) {
                     <p className="font-medium">
                       {d.formCode} <span className="text-slate-400">· {d.agency.toUpperCase()}</span>
                     </p>
-                    <p className="text-xs text-slate-500">Due {new Date(d.dueDate).toLocaleDateString()}</p>
+                    <p className="text-xs text-slate-500">Due {formatDate(d.dueDate)}</p>
                   </div>
                   <Badge tone={DEADLINE_TONE[d.status]}>{d.status.replace('_', ' ')}</Badge>
                 </li>
