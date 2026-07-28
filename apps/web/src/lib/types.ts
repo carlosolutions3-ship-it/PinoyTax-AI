@@ -264,6 +264,15 @@ export interface FormTemplate {
   version: string | null;
 }
 
+export interface Branch {
+  id: UUID;
+  companyId: UUID;
+  branchName: string;
+  branchAddress: string | null;
+  rdoCode: string | null;
+  status: string;
+}
+
 export type NotificationChannel = 'email' | 'sms' | 'push' | 'in_app';
 export type NotificationStatus = 'queued' | 'sent' | 'failed' | 'read';
 
