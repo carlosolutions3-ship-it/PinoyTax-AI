@@ -10,6 +10,8 @@ import { ApiError } from '@/lib/api-client';
 import { omitEmptyStrings } from '@/lib/forms';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
+import { EmptyState } from '@/components/empty-state';
+import { CardSkeleton } from '@/components/skeleton';
 
 export default function CompaniesPage() {
   return (
@@ -43,12 +45,17 @@ function CompaniesContent() {
         />
       )}
 
-      {isLoading && <p className="text-sm text-slate-500">Loading companies…</p>}
       <ErrorText>{error}</ErrorText>
 
+      {isLoading && <CardSkeleton />}
+
       {!isLoading && entries.length === 0 && !showCreate && (
-        <Card className="text-center text-sm text-slate-500">
-          You don&apos;t have any companies yet. Add one to get started.
+        <Card>
+          <EmptyState
+            title="No companies yet"
+            description="Add your business to start tracking payroll, taxes, and compliance."
+            action={<Button onClick={() => setShowCreate(true)}>Add your first company</Button>}
+          />
         </Card>
       )}
 
