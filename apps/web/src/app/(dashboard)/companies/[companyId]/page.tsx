@@ -7,6 +7,7 @@ import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText } from '@/components/ui';
+import { BarChart, ProgressBar } from '@/components/charts';
 import { complianceApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import type { ComplianceStatus, FilingDeadline, FlaggedIssue, IssueStatus } from '@/lib/types';
@@ -119,12 +120,34 @@ function DashboardContent({ companyId }: { companyId: string }) {
           <Card key={s.id}>
             <p className="text-xs uppercase tracking-wide text-slate-500">{s.category}</p>
             <p className="mt-1 text-2xl font-semibold">{s.compliancePercentage}%</p>
-            <p className="mt-1 text-xs text-slate-500">
+            <div className="mt-2">
+              <ProgressBar
+                value={Number(s.compliancePercentage)}
+                color={s.overdueCount > 0 ? '#e11d48' : '#1d4ed8'}
+                label={`${s.compliancePercentage}% complete`}
+              />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
               {s.completedCount} completed · {s.pendingCount} pending · {s.overdueCount} overdue
             </p>
           </Card>
         ))}
       </div>
+
+      {issues.length > 0 && (
+        <Card>
+          <h2 className="mb-4 font-semibold">Flagged issues by severity</h2>
+          <BarChart
+            data={(['critical', 'high', 'medium', 'low'] as const)
+              .map((severity) => ({
+                label: severity,
+                value: issues.filter((i) => i.severity === severity).length,
+                color: { critical: '#e11d48', high: '#dc2626', medium: '#d97706', low: '#64748b' }[severity],
+              }))
+              .filter((d) => d.value > 0)}
+          />
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
