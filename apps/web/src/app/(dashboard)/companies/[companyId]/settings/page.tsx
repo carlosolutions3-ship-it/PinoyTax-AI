@@ -9,6 +9,7 @@ import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 import { companiesApi, UpdateCompanyInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
+import { omitEmptyStrings } from '@/lib/forms';
 import type { Company } from '@/lib/types';
 
 export default function SettingsPage() {
@@ -78,7 +79,7 @@ function CompanyProfileForm({ company, onSaved }: { company: Company; onSaved: (
     setSuccessMessage(null);
     setIsSubmitting(true);
     try {
-      const updated = await companiesApi.update(company.id, form);
+      const updated = await companiesApi.update(company.id, omitEmptyStrings(form) as UpdateCompanyInput);
       onSaved(updated);
       setSuccessMessage('Company profile updated.');
     } catch (err) {

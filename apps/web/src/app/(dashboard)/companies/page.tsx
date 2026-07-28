@@ -7,6 +7,7 @@ import { AppShell } from '@/components/app-shell';
 import { useMyCompanies } from '@/hooks/use-my-companies';
 import { companiesApi, CreateCompanyInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
+import { omitEmptyStrings } from '@/lib/forms';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 
@@ -94,7 +95,7 @@ function CreateCompanyForm({ onCreated }: { onCreated: () => void }) {
     setError(null);
     setIsSubmitting(true);
     try {
-      await companiesApi.create(form);
+      await companiesApi.create(omitEmptyStrings(form) as CreateCompanyInput);
       onCreated();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Unable to create company.');
