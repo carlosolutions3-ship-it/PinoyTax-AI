@@ -18,6 +18,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/notifications" className="text-sm font-medium text-slate-600 hover:text-slate-900">
               Notifications
             </Link>
+            <Link href="/forms" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+              Forms library
+            </Link>
           </div>
           <div className="flex items-center gap-4">
             {user && (
