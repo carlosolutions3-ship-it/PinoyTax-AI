@@ -21,6 +21,7 @@ import type {
   Payslip,
   SecurityEvent,
   SessionInfo,
+  StaffEntry,
   TaxComputation,
   UserProfile,
   VaultDocument,
@@ -96,6 +97,9 @@ export const companiesApi = {
     api.post(`/companies/${companyId}/invitations`, input),
   acceptInvitation: (invitationId: string) =>
     api.post(`/companies/invitations/${invitationId}/accept`),
+  listStaff: (companyId: string) => api.get<StaffEntry[]>(`/companies/${companyId}/staff`),
+  revokeStaff: (companyId: string, userCompanyRoleId: string) =>
+    api.delete<StaffEntry>(`/companies/${companyId}/staff/${userCompanyRoleId}`),
 };
 
 // ---------------------------------------------------------------------------

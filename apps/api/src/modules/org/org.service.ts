@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -154,6 +155,46 @@ export class OrgService {
     return this.prisma.userCompanyRole.update({
       where: { id: invitation.id },
       data: { status: 'active', acceptedAt: new Date() },
+    });
+  }
+
+  /** Lists every staff/role attachment for a company — active, pending, and revoked. */
+  async listStaff(companyId: string) {
+    return this.prisma.userCompanyRole.findMany({
+      where: { companyId },
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        role: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: { invitedAt: 'desc' },
+    });
+  }
+
+  /**
+   * Revokes a staff member's access. Never revokes a business_owner
+   * through this endpoint — ownership isn't "staff" in the same sense
+   * invite/accept covers (InviteStaffDto only ever grants
+   * accountant/bookkeeper in the first place), and revoking a company's
+   * only owner would orphan it.
+   */
+  async revokeStaff(companyId: string, userCompanyRoleId: string) {
+    const userCompanyRole = await this.prisma.userCompanyRole.findUnique({
+      where: { id: userCompanyRoleId },
+      include: { role: true },
+    });
+    if (!userCompanyRole || userCompanyRole.companyId !== companyId) {
+      throw new NotFoundException({ code: 'STAFF_ROLE_NOT_FOUND', message: 'Staff role not found.' });
+    }
+    if (userCompanyRole.role.code === 'business_owner') {
+      throw new BadRequestException({
+        code: 'CANNOT_REVOKE_OWNER',
+        message: "A company's owner role cannot be revoked from this endpoint.",
+      });
+    }
+
+    return this.prisma.userCompanyRole.update({
+      where: { id: userCompanyRoleId },
+      data: { status: 'revoked' },
     });
   }
 }
