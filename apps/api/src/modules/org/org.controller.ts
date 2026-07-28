@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { OrgService } from './org.service';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -55,5 +55,23 @@ export class OrgController {
     @Param('invitationId') invitationId: string,
   ) {
     return this.orgService.acceptInvitation(user.id, invitationId);
+  }
+
+  @Get(':companyId/staff')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('staff:invite')
+  async listStaff(@Param('companyId') companyId: string) {
+    return this.orgService.listStaff(companyId);
+  }
+
+  @Delete(':companyId/staff/:userCompanyRoleId')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('staff:invite')
+  @Audit({ action: 'staff.revoke', entityType: 'user_company_role' })
+  async revokeStaff(
+    @Param('companyId') companyId: string,
+    @Param('userCompanyRoleId') userCompanyRoleId: string,
+  ) {
+    return this.orgService.revokeStaff(companyId, userCompanyRoleId);
   }
 }

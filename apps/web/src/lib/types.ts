@@ -264,6 +264,20 @@ export interface FormTemplate {
   version: string | null;
 }
 
+export type StaffRoleStatus = 'pending' | 'active' | 'revoked';
+
+export interface StaffEntry {
+  id: UUID;
+  userId: UUID;
+  companyId: UUID;
+  roleId: UUID;
+  status: StaffRoleStatus;
+  invitedAt: string;
+  acceptedAt: string | null;
+  user: { id: UUID; email: string; firstName: string; lastName: string };
+  role: { id: UUID; code: string; name: string };
+}
+
 export interface Branch {
   id: UUID;
   companyId: UUID;

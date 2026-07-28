@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
@@ -50,15 +51,18 @@ function SettingsContent({ companyId }: { companyId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Company settings</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Company settings</h1>
+        <Link href={`/companies/${companyId}/roles`} className="text-sm text-brand-600 hover:underline">
+          Manage staff roles &amp; permissions →
+        </Link>
+      </div>
       {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       <ErrorText>{error}</ErrorText>
 
       {company && <CompanyProfileForm company={company} onSaved={setCompany} />}
 
       <BranchesSection companyId={companyId} />
-
-      <InviteStaffForm companyId={companyId} />
     </div>
   );
 }
@@ -309,62 +313,3 @@ function AddBranchForm({ companyId, onCreated }: { companyId: string; onCreated:
   );
 }
 
-function InviteStaffForm({ companyId }: { companyId: string }) {
-  const [email, setEmail] = useState('');
-  const [roleCode, setRoleCode] = useState<'accountant' | 'bookkeeper'>('accountant');
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccessMessage(null);
-    setIsSubmitting(true);
-    try {
-      await companiesApi.inviteStaff(companyId, { email, roleCode });
-      setSuccessMessage(`Invitation sent to ${email}.`);
-      setEmail('');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to send invitation.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <Card>
-      <h2 className="mb-1 font-semibold">Invite staff</h2>
-      <p className="mb-4 text-sm text-slate-500">
-        Invite an accountant or bookkeeper. They must already have a PinoyTax AI account — ask them to register
-        first if they don&apos;t.
-      </p>
-      <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-4">
-        <Field>
-          <Label htmlFor="inviteEmail">Email</Label>
-          <Input
-            id="inviteEmail"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </Field>
-        <Field>
-          <Label htmlFor="roleCode">Role</Label>
-          <Select id="roleCode" value={roleCode} onChange={(e) => setRoleCode(e.target.value as 'accountant' | 'bookkeeper')}>
-            <option value="accountant">Accountant</option>
-            <option value="bookkeeper">Bookkeeper</option>
-          </Select>
-        </Field>
-        <Button type="submit" isLoading={isSubmitting}>
-          Send invitation
-        </Button>
-      </form>
-      <div className="mt-2 flex flex-col gap-1">
-        <ErrorText>{error}</ErrorText>
-        {successMessage && <p className="text-sm text-emerald-600">{successMessage}</p>}
-      </div>
-    </Card>
-  );
-}
