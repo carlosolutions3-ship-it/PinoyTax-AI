@@ -2,11 +2,14 @@
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { File, FileImage, FileSpreadsheet, FileText, FolderOpen } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
+import { EmptyState } from '@/components/empty-state';
+import { TableSkeleton } from '@/components/skeleton';
 import { documentsApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
@@ -21,6 +24,20 @@ const CATEGORY_LABELS: Record<DocumentCategory, string> = {
 };
 
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+
+function FileTypeIcon({ fileName }: { fileName: string }) {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+    return <FileImage className="h-5 w-5" aria-hidden="true" />;
+  }
+  if (['xls', 'xlsx', 'csv'].includes(ext)) {
+    return <FileSpreadsheet className="h-5 w-5" aria-hidden="true" />;
+  }
+  if (['pdf', 'doc', 'docx', 'txt'].includes(ext)) {
+    return <FileText className="h-5 w-5" aria-hidden="true" />;
+  }
+  return <File className="h-5 w-5" aria-hidden="true" />;
+}
 
 function formatBytes(value: string | null): string {
   if (!value) return '—';
@@ -90,7 +107,12 @@ function DocumentsContent({ companyId }: { companyId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Document vault</h1>
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft">
+            <FolderOpen className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Document vault</h1>
+        </div>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => setShowNewFolder((v) => !v)}>
             {showNewFolder ? 'Cancel' : 'New folder'}
@@ -149,9 +171,10 @@ function DocumentsContent({ companyId }: { companyId: string }) {
           </Field>
         </div>
 
-        {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-        {!isLoading && visibleDocuments.length === 0 ? (
-          <p className="text-sm text-slate-500">No documents match these filters.</p>
+        {isLoading ? (
+          <TableSkeleton rows={3} columns={3} />
+        ) : visibleDocuments.length === 0 ? (
+          <EmptyState title="No documents found" description="No documents match these filters yet." />
         ) : (
           <ul className="flex flex-col gap-2">
             {visibleDocuments.map((doc) => (
@@ -212,13 +235,18 @@ function DocumentRow({
   }
 
   return (
-    <li className="rounded-md border border-slate-200 px-4 py-3 text-sm">
+    <li className="rounded-lg border border-slate-200 px-4 py-3 text-sm transition-colors hover:border-brand-200 hover:bg-brand-50/30">
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="font-medium">{doc.fileName}</p>
-          <p className="text-xs text-slate-500">
-            {formatBytes(doc.sizeBytes)} · Uploaded {formatDate(doc.createdAt)}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+            <FileTypeIcon fileName={doc.fileName} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-medium">{doc.fileName}</p>
+            <p className="text-xs text-slate-500">
+              {formatBytes(doc.sizeBytes)} · Uploaded {formatDate(doc.createdAt)}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Badge tone="blue">{CATEGORY_LABELS[doc.category]}</Badge>

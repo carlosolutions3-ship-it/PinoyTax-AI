@@ -2,11 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { Calculator } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
+import { EmptyState } from '@/components/empty-state';
+import { TableSkeleton } from '@/components/skeleton';
 import { taxApi, ComputeTaxInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -75,16 +78,22 @@ function TaxContent({ companyId }: { companyId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Tax computations</h1>
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft">
+          <Calculator className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Tax computations</h1>
+      </div>
       <ErrorText>{error}</ErrorText>
 
       <ComputeTaxForm companyId={companyId} onComputed={load} />
 
       <Card>
         <h2 className="mb-4 font-semibold">History</h2>
-        {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-        {!isLoading && computations.length === 0 ? (
-          <p className="text-sm text-slate-500">No tax computations yet.</p>
+        {isLoading ? (
+          <TableSkeleton columns={5} />
+        ) : computations.length === 0 ? (
+          <EmptyState title="No tax computations yet" description="Run your first computation above." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">

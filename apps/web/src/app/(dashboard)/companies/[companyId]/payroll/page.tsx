@@ -3,11 +3,14 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { Users } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
+import { EmptyState } from '@/components/empty-state';
+import { TableSkeleton } from '@/components/skeleton';
 import { payrollApi, CreateEmployeeInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -64,8 +67,12 @@ function PayrollContent({ companyId }: { companyId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Payroll</h1>
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft">
+          <Users className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Payroll</h1>
+      </div>
       <ErrorText>{error}</ErrorText>
 
       <Card>
@@ -86,8 +93,10 @@ function PayrollContent({ companyId }: { companyId: string }) {
           />
         )}
 
-        {!isLoading && employees.length === 0 ? (
-          <p className="text-sm text-slate-500">No employees yet. Add one to start running payroll.</p>
+        {isLoading ? (
+          <TableSkeleton columns={7} />
+        ) : employees.length === 0 ? (
+          <EmptyState title="No employees yet" description="Add your first employee to start running payroll." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -144,15 +153,17 @@ function PayrollContent({ companyId }: { companyId: string }) {
           />
         )}
 
-        {!isLoading && runs.length === 0 ? (
-          <p className="text-sm text-slate-500">No payroll runs yet.</p>
+        {isLoading ? (
+          <TableSkeleton rows={3} columns={2} />
+        ) : runs.length === 0 ? (
+          <EmptyState title="No payroll runs yet" description="Create a run to process pay for this period." />
         ) : (
           <ul className="flex flex-col gap-2">
             {runs.map((run) => (
               <li key={run.id}>
                 <Link
                   href={`/companies/${companyId}/payroll/${run.id}`}
-                  className="flex items-center justify-between rounded-md border border-slate-200 px-4 py-3 text-sm hover:bg-slate-50"
+                  className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 text-sm transition-colors hover:border-brand-300 hover:bg-brand-50/50"
                 >
                   <span>
                     {formatDate(run.periodStart)} – {formatDate(run.periodEnd)}
