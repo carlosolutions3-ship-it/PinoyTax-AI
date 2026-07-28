@@ -6,6 +6,7 @@ import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Badge, Card, ErrorText } from '@/components/ui';
+import { BarChart } from '@/components/charts';
 import { complianceApi, payrollApi, taxApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -109,6 +110,17 @@ function ReportsContent({ companyId }: { companyId: string }) {
               <SummaryTile label="Total net pay" value={formatCurrency(payrollTotals.netPay)} />
               <SummaryTile label="Total withholding tax" value={formatCurrency(payrollTotals.withholdingTax)} />
             </div>
+            <div className="mt-4">
+              <h3 className="mb-2 text-xs uppercase tracking-wide text-slate-500">Net pay by period</h3>
+              <BarChart
+                data={finalizedRuns.map((run) => ({
+                  label: formatDate(run.periodStart),
+                  value: run.payslips.reduce((sum, p) => sum + Number(p.netPay), 0),
+                  color: '#1d4ed8',
+                }))}
+                formatValue={formatCurrency}
+              />
+            </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
@@ -148,6 +160,15 @@ function ReportsContent({ companyId }: { companyId: string }) {
         ) : (
           <>
             <SummaryTile label="Total confirmed tax" value={formatCurrency(totalConfirmedTax)} />
+            <div className="mt-4">
+              <BarChart
+                data={Object.entries(taxByType).map(([type, total]) => ({
+                  label: TAX_TYPE_LABELS[type as ComputationType] ?? type,
+                  value: total,
+                }))}
+                formatValue={formatCurrency}
+              />
+            </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
