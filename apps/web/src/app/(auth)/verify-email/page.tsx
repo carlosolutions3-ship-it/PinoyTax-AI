@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
-import { Card } from '@/components/ui';
+import { AuthLayout } from '@/components/brand/auth-layout';
 
 export default function VerifyEmailPage() {
   return (
@@ -40,16 +40,16 @@ function VerifyEmailStatus() {
   }, [token]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <Card className="w-full max-w-sm text-center">
-        <h1 className="mb-2 text-lg font-semibold">
+    <AuthLayout>
+      <div className="text-center">
+        <h1 className="mb-2 text-2xl font-semibold tracking-tight text-slate-900">
           {status === 'success' ? 'Email verified' : status === 'error' ? 'Verification failed' : 'One moment…'}
         </h1>
         <p className="text-sm text-slate-600">{message}</p>
-        <Link href="/login" className="mt-4 inline-block text-sm text-brand-600 hover:underline">
+        <Link href="/login" className="mt-6 inline-block text-sm font-medium text-brand-600 hover:text-brand-700">
           Back to login
         </Link>
-      </Card>
-    </div>
+      </div>
+    </AuthLayout>
   );
 }
