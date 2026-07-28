@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from './button';
+import { Logo } from './brand/logo';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -12,8 +13,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
-            <Link href="/companies" className="text-lg font-semibold text-brand-700">
-              PinoyTax AI
+            <Link href="/companies">
+              <Logo />
             </Link>
             <Link href="/notifications" className="text-sm font-medium text-slate-600 hover:text-slate-900">
               Notifications
