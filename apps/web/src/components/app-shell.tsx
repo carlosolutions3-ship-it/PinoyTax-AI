@@ -21,9 +21,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-4">
             {user && (
-              <span className="text-sm text-slate-600">
+              <Link href="/profile" className="text-sm text-slate-600 hover:text-slate-900">
                 {user.firstName} {user.lastName}
-              </span>
+              </Link>
             )}
             <Button variant="ghost" onClick={() => logout()}>
               Log out
