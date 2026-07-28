@@ -2,11 +2,15 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { ShieldCheck } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
+import { Avatar } from '@/components/avatar';
+import { EmptyState } from '@/components/empty-state';
+import { TableSkeleton } from '@/components/skeleton';
 import { companiesApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatDate } from '@/lib/format';
@@ -76,16 +80,22 @@ function RolesContent({ companyId }: { companyId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Roles &amp; permissions</h1>
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft">
+          <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Roles &amp; permissions</h1>
+      </div>
       <ErrorText>{error}</ErrorText>
 
       <InviteStaffForm companyId={companyId} onInvited={load} />
 
       <Card>
         <h2 className="mb-4 font-semibold">Staff on this company</h2>
-        {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-        {!isLoading && staff.length === 0 ? (
-          <p className="text-sm text-slate-500">No staff attached yet.</p>
+        {isLoading ? (
+          <TableSkeleton columns={6} />
+        ) : staff.length === 0 ? (
+          <EmptyState title="No staff attached yet" description="Invite an accountant or bookkeeper above." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -103,7 +113,10 @@ function RolesContent({ companyId }: { companyId: string }) {
                 {staff.map((s) => (
                   <tr key={s.id} className="border-b border-slate-100 last:border-0">
                     <td className="py-2 pr-4 font-medium">
-                      {s.user.firstName} {s.user.lastName}
+                      <div className="flex items-center gap-2.5">
+                        <Avatar name={`${s.user.firstName} ${s.user.lastName}`} size="sm" />
+                        {s.user.firstName} {s.user.lastName}
+                      </div>
                     </td>
                     <td className="py-2 pr-4 text-slate-500">{s.user.email}</td>
                     <td className="py-2 pr-4">{ROLE_LABELS[s.role.code] ?? s.role.name}</td>

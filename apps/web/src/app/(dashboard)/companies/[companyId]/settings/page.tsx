@@ -3,11 +3,14 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { Settings as SettingsIcon } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
+import { EmptyState } from '@/components/empty-state';
+import { CardSkeleton, TableSkeleton } from '@/components/skeleton';
 import { branchesApi, companiesApi, CreateBranchInput, UpdateCompanyInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { omitEmptyStrings } from '@/lib/forms';
@@ -52,15 +55,22 @@ function SettingsContent({ companyId }: { companyId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Company settings</h1>
-        <Link href={`/companies/${companyId}/roles`} className="text-sm text-brand-600 hover:underline">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft">
+            <SettingsIcon className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Company settings</h1>
+        </div>
+        <Link
+          href={`/companies/${companyId}/roles`}
+          className="text-sm font-medium text-brand-600 hover:text-brand-700"
+        >
           Manage staff roles &amp; permissions →
         </Link>
       </div>
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       <ErrorText>{error}</ErrorText>
 
-      {company && <CompanyProfileForm company={company} onSaved={setCompany} />}
+      {isLoading ? <CardSkeleton count={1} /> : company && <CompanyProfileForm company={company} onSaved={setCompany} />}
 
       <BranchesSection companyId={companyId} />
     </div>
@@ -224,15 +234,19 @@ function BranchesSection({ companyId }: { companyId: string }) {
         />
       )}
 
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-      {!isLoading && branches.length === 0 ? (
-        <p className="text-sm text-slate-500">No branches yet — this company operates from its main address only.</p>
+      {isLoading ? (
+        <TableSkeleton rows={2} columns={2} />
+      ) : branches.length === 0 ? (
+        <EmptyState
+          title="No branches yet"
+          description="This company operates from its main address only."
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {branches.map((branch) => (
             <li
               key={branch.id}
-              className="flex items-center justify-between gap-4 rounded-md border border-slate-200 px-4 py-3 text-sm"
+              className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 px-4 py-3 text-sm"
             >
               <div>
                 <p className="font-medium">{branch.branchName}</p>

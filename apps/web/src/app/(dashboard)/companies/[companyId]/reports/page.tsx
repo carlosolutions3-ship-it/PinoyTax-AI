@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { BarChart3 } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
@@ -94,7 +95,12 @@ function ReportsContent({ companyId }: { companyId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Reports</h1>
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft">
+          <BarChart3 className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Reports</h1>
+      </div>
       {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       <ErrorText>{error}</ErrorText>
 

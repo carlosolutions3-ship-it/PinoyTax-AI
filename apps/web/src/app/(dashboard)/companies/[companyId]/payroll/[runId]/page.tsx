@@ -8,6 +8,8 @@ import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText } from '@/components/ui';
+import { EmptyState } from '@/components/empty-state';
+import { TableSkeleton } from '@/components/skeleton';
 import { payrollApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -90,17 +92,16 @@ function PayrollRunContent({ companyId, runId }: { companyId: string; runId: str
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <Link href={`/companies/${companyId}/payroll`} className="text-sm text-brand-600 hover:underline">
+          <Link href={`/companies/${companyId}/payroll`} className="text-sm font-medium text-brand-600 hover:text-brand-700">
             ← Back to payroll
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
             {run ? `${formatDate(run.periodStart)} – ${formatDate(run.periodEnd)}` : 'Payroll run'}
           </h1>
         </div>
         {run && <Badge tone={RUN_STATUS_TONE[run.status]}>{run.status}</Badge>}
       </div>
 
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       <ErrorText>{error}</ErrorText>
 
       {run && run.status !== 'finalized' && run.status !== 'paid' && (
@@ -122,10 +123,13 @@ function PayrollRunContent({ companyId, runId }: { companyId: string; runId: str
 
       <Card>
         <h2 className="mb-4 font-semibold">Payslips</h2>
-        {run && run.payslips.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No payslips yet — click &quot;Compute payslips&quot; to generate them for all active employees.
-          </p>
+        {isLoading ? (
+          <TableSkeleton columns={7} />
+        ) : run && run.payslips.length === 0 ? (
+          <EmptyState
+            title="No payslips yet"
+            description={'Click "Compute payslips" to generate them for all active employees.'}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
