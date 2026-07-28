@@ -141,6 +141,21 @@ export class OrgService {
     });
   }
 
+  /** Pending invitations addressed to this user, across every company — what
+   * they need to see to actually accept one, since accepting requires the
+   * invitation's id and nothing surfaces that otherwise. */
+  async listMyInvitations(userId: string) {
+    return this.prisma.userCompanyRole.findMany({
+      where: { userId, status: 'pending' },
+      include: {
+        company: { select: { id: true, businessName: true, tradeName: true } },
+        role: { select: { code: true, name: true } },
+        invitedBy: { select: { firstName: true, lastName: true, email: true } },
+      },
+      orderBy: { invitedAt: 'desc' },
+    });
+  }
+
   async acceptInvitation(userId: string, userCompanyRoleId: string) {
     const invitation = await this.prisma.userCompanyRole.findFirst({
       where: { id: userCompanyRoleId, userId, status: 'pending' },
