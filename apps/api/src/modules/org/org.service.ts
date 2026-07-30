@@ -70,7 +70,10 @@ export class OrgService {
   }
 
   async getCompany(companyId: string) {
-    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: { firm: { select: { id: true, firmName: true } } },
+    });
     if (!company) {
       throw new NotFoundException({ code: 'COMPANY_NOT_FOUND', message: 'Company not found.' });
     }

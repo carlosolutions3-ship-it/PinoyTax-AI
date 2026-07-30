@@ -2,11 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Mail } from 'lucide-react';
+import { Briefcase, Mail } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { useMyCompanies } from '@/hooks/use-my-companies';
-import { companiesApi, CreateCompanyInput } from '@/lib/endpoints';
+import { companiesApi, firmsApi, CreateCompanyInput } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { omitEmptyStrings } from '@/lib/forms';
 import { formatDate } from '@/lib/format';
@@ -14,7 +14,7 @@ import { Button } from '@/components/button';
 import { Badge, Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 import { EmptyState } from '@/components/empty-state';
 import { CardSkeleton } from '@/components/skeleton';
-import type { PendingInvitation } from '@/lib/types';
+import type { PendingClientInvitation, PendingInvitation } from '@/lib/types';
 
 const ROLE_LABELS: Record<string, string> = {
   accountant: 'Accountant',
@@ -48,6 +48,7 @@ function CompaniesContent() {
       </div>
 
       <PendingInvitations onAccepted={reload} />
+      <PendingClientInvitations onResponded={reload} />
 
       {showCreate && (
         <CreateCompanyForm
@@ -290,6 +291,89 @@ function PendingInvitations({ onAccepted }: { onAccepted: () => void }) {
             >
               Accept
             </Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+/** Firms asking to manage a company this user owns — a separate concept
+ * from staff invitations above: this hands a whole company's management
+ * over to a firm, not just one person's role on it, so it gets its own
+ * accept/decline surface rather than reusing PendingInvitations. */
+function PendingClientInvitations({ onResponded }: { onResponded: () => void }) {
+  const [invitations, setInvitations] = useState<PendingClientInvitation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const result = await firmsApi.listMyClientInvitations();
+      setInvitations(result);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load firm engagement requests.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleRespond(invitationId: string, accept: boolean) {
+    setRespondingId(invitationId);
+    try {
+      await firmsApi.respondToClientInvitation(invitationId, accept);
+      setInvitations((prev) => prev.filter((i) => i.id !== invitationId));
+      onResponded();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to respond to invitation.');
+    } finally {
+      setRespondingId(null);
+    }
+  }
+
+  if (isLoading || invitations.length === 0) return null;
+
+  return (
+    <Card className="border-indigo-200 bg-indigo-50/40">
+      <div className="mb-3 flex items-center gap-2">
+        <Briefcase className="h-4 w-4 text-indigo-600" aria-hidden="true" />
+        <h2 className="font-semibold text-slate-900">
+          Firm engagement request{invitations.length > 1 ? 's' : ''}
+        </h2>
+      </div>
+      <ErrorText>{error}</ErrorText>
+      <ul className="flex flex-col gap-2">
+        {invitations.map((invite) => (
+          <li
+            key={invite.id}
+            className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <p className="font-medium text-slate-900">{invite.firm.firmName}</p>
+              <p className="text-xs text-slate-500">
+                Wants to manage {invite.company.businessName} · {formatDate(invite.invitedAt)}
+              </p>
+            </div>
+            <div className="flex gap-2 self-start sm:self-auto">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => handleRespond(invite.id, false)}
+                isLoading={respondingId === invite.id}
+              >
+                Decline
+              </Button>
+              <Button size="sm" onClick={() => handleRespond(invite.id, true)} isLoading={respondingId === invite.id}>
+                Accept
+              </Button>
+            </div>
           </li>
         ))}
       </ul>

@@ -8,14 +8,23 @@ import type {
   ComplianceStatus,
   Employee,
   FilingDeadline,
+  Firm,
+  FirmCompanyAssignmentEntry,
+  FirmDashboard,
+  FirmPermissionCatalogEntry,
+  FirmStaffEntry,
+  FirmType,
   FlaggedIssue,
   Folder,
   FormTemplate,
   IssueStatus,
   LoginResponse,
   MyCompanyEntry,
+  MyFirmEntry,
   NotificationItem,
   NotificationPreference,
+  PendingClientInvitation,
+  PendingFirmInvitation,
   PendingInvitation,
   PayrollRun,
   PayrollRunDetail,
@@ -278,4 +287,71 @@ export const adminApi = {
     api.get<AuditLog[]>(`/admin/audit-logs/${companyId}${take ? `?take=${take}` : ''}`),
   securityEvents: (take?: number) =>
     api.get<SecurityEvent[]>(`/admin/security-events${take ? `?take=${take}` : ''}`),
+};
+
+// ---------------------------------------------------------------------------
+// firms
+// ---------------------------------------------------------------------------
+
+export interface CreateFirmInput {
+  firmName: string;
+  firmType: FirmType;
+  contactEmail: string;
+  contactNumber?: string;
+}
+
+export interface UpdateFirmInput {
+  firmName?: string;
+  contactEmail?: string;
+  contactNumber?: string;
+}
+
+// firm_owner is intentionally not assignable via invite/role-change — see
+// the backend DTO comment (ownership transfer is out of scope).
+export type AssignableFirmRoleCode = 'firm_admin' | 'firm_accountant' | 'firm_bookkeeper' | 'firm_auditor';
+
+export const firmsApi = {
+  create: (input: CreateFirmInput) => api.post<Firm>('/firms', input),
+  listMine: () => api.get<MyFirmEntry[]>('/firms'),
+  getOne: (firmId: string) => api.get<Firm>(`/firms/${firmId}`),
+  update: (firmId: string, input: UpdateFirmInput) => api.patch<Firm>(`/firms/${firmId}`, input),
+  getDashboard: (firmId: string) => api.get<FirmDashboard>(`/firms/${firmId}/dashboard`),
+  permissionCatalog: () => api.get<FirmPermissionCatalogEntry[]>('/firms/permission-catalog'),
+
+  inviteStaff: (firmId: string, input: { email: string; firmRoleCode: AssignableFirmRoleCode }) =>
+    api.post<FirmStaffEntry>(`/firms/${firmId}/staff`, input),
+  listStaff: (firmId: string) => api.get<FirmStaffEntry[]>(`/firms/${firmId}/staff`),
+  updateStaffRole: (firmId: string, membershipId: string, firmRoleCode: AssignableFirmRoleCode) =>
+    api.patch<FirmStaffEntry>(`/firms/${firmId}/staff/${membershipId}`, { firmRoleCode }),
+  revokeStaff: (firmId: string, membershipId: string) =>
+    api.delete<FirmStaffEntry>(`/firms/${firmId}/staff/${membershipId}`),
+
+  listMyInvitations: () => api.get<PendingFirmInvitation[]>('/firms/invitations/mine'),
+  acceptInvitation: (membershipId: string) => api.post<FirmStaffEntry>(`/firms/invitations/${membershipId}/accept`),
+
+  createClientCompany: (firmId: string, input: CreateCompanyInput) =>
+    api.post<Company>(`/firms/${firmId}/companies`, input),
+  listClientCompanies: (firmId: string) => api.get<Company[]>(`/firms/${firmId}/companies`),
+  lookupCompanyByTin: (firmId: string, tin: string) =>
+    api.get<{ id: string; businessName: string; tradeName: string | null; firmId: string | null }>(
+      `/firms/${firmId}/companies/lookup?tin=${encodeURIComponent(tin)}`,
+    ),
+  removeClientCompany: (firmId: string, companyId: string) =>
+    api.delete<Company>(`/firms/${firmId}/companies/${companyId}`),
+  inviteClientCompany: (firmId: string, companyId: string) =>
+    api.post(`/firms/${firmId}/client-invitations`, { companyId }),
+
+  listMyClientInvitations: () => api.get<PendingClientInvitation[]>('/firms/client-invitations/mine'),
+  respondToClientInvitation: (invitationId: string, accept: boolean) =>
+    api.post(`/firms/client-invitations/${invitationId}/respond`, { accept }),
+
+  listAssignments: (firmId: string, companyId: string) =>
+    api.get<FirmCompanyAssignmentEntry[]>(`/firms/${firmId}/companies/${companyId}/assignments`),
+  setAssignment: (firmId: string, companyId: string, membershipId: string, permissionCodes: string[]) =>
+    api.put<FirmCompanyAssignmentEntry>(
+      `/firms/${firmId}/companies/${companyId}/assignments/${membershipId}`,
+      { permissionCodes },
+    ),
+  revokeAssignment: (firmId: string, assignmentId: string) =>
+    api.delete<FirmCompanyAssignmentEntry>(`/firms/${firmId}/assignments/${assignmentId}`),
 };

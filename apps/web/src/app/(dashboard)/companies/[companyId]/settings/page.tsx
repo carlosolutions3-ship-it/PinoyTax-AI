@@ -7,6 +7,7 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
+import { FirmContextBanner } from '@/components/firm-context-banner';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Input, Label, Select } from '@/components/ui';
 import { EmptyState } from '@/components/empty-state';
@@ -24,6 +25,7 @@ export default function SettingsPage() {
     <RequireAuth>
       <AppShell>
         <CompanyNav companyId={companyId} />
+        <FirmContextBanner companyId={companyId} />
         <SettingsContent companyId={companyId} />
       </AppShell>
     </RequireAuth>

@@ -62,6 +62,7 @@ export interface Company {
   status: CompanyStatus;
   createdAt: string;
   updatedAt: string;
+  firm?: { id: UUID; firmName: string } | null;
 }
 
 export interface MyCompanyEntry {
@@ -285,6 +286,118 @@ export interface StaffEntry {
   acceptedAt: string | null;
   user: { id: UUID; email: string; firstName: string; lastName: string };
   role: { id: UUID; code: string; name: string };
+}
+
+export type FirmType = 'accounting_firm' | 'bookkeeping_firm' | 'tax_consultancy';
+
+export interface Firm {
+  id: UUID;
+  firmName: string;
+  firmType: FirmType;
+  contactEmail: string;
+  contactNumber: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MyFirmEntry {
+  firm: Firm;
+  firmRole: string;
+}
+
+export type FirmMembershipStatus = 'pending' | 'active' | 'revoked';
+
+export interface FirmStaffEntry {
+  id: UUID;
+  firmId: UUID;
+  userId: UUID;
+  firmRoleId: UUID;
+  status: FirmMembershipStatus;
+  invitedAt: string;
+  acceptedAt: string | null;
+  user: { id: UUID; email: string; firstName: string; lastName: string };
+  firmRole: { id: UUID; code: string; name: string };
+}
+
+export interface PendingFirmInvitation {
+  id: UUID;
+  firmId: UUID;
+  invitedAt: string;
+  firm: { id: UUID; firmName: string; firmType: FirmType };
+  firmRole: { code: string; name: string };
+  invitedBy: { firstName: string; lastName: string; email: string } | null;
+}
+
+export interface PendingClientInvitation {
+  id: UUID;
+  firmId: UUID;
+  companyId: UUID;
+  invitedAt: string;
+  firm: { id: UUID; firmName: string; firmType: FirmType; contactEmail: string };
+  company: { id: UUID; businessName: string };
+}
+
+export interface FirmCompanyAssignmentPermissionEntry {
+  permission: { id: UUID; code: string; label: string };
+}
+
+export interface FirmCompanyAssignmentEntry {
+  id: UUID;
+  firmMembershipId: UUID;
+  companyId: UUID;
+  status: 'active' | 'revoked';
+  createdAt: string;
+  firmMembership: {
+    id: UUID;
+    user: { id: UUID; email: string; firstName: string; lastName: string };
+    firmRole: { code: string; name: string };
+  };
+  permissions: FirmCompanyAssignmentPermissionEntry[];
+}
+
+export interface FirmPermissionCatalogEntry {
+  id: UUID;
+  code: string;
+  label: string;
+}
+
+export interface FirmDashboardClient {
+  id: UUID;
+  businessName: string;
+  tradeName: string | null;
+  vatClassification: VatClassification;
+  status: CompanyStatus;
+  compliancePercentage: number;
+  overdueFilings: number;
+  upcomingDeadlines: number;
+  openIssuesBySeverity: { critical: number; high: number; medium: number; low: number };
+  latestPayrollRun: { status: PayrollRunStatus; periodStart: string; periodEnd: string } | null;
+  latestTaxComputation: { computationType: ComputationType; status: ComputationStatus; periodEnd: string } | null;
+}
+
+export interface FirmDashboardDeadline {
+  id: UUID;
+  companyId: UUID;
+  companyName: string;
+  formCode: string;
+  agency: Agency;
+  dueDate: string;
+  status: FilingStatus;
+}
+
+export interface FirmDashboard {
+  firm: Firm;
+  clients: FirmDashboardClient[];
+  totals: {
+    totalClients: number;
+    avgCompliancePercentage: number;
+    totalOverdueFilings: number;
+    totalOpenCriticalIssues: number;
+    totalOpenHighIssues: number;
+  };
+  upcomingDeadlines: FirmDashboardDeadline[];
+  aiInsight: string | null;
 }
 
 export interface Branch {

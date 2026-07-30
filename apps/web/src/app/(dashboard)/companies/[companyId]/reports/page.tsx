@@ -6,6 +6,7 @@ import { BarChart3 } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
+import { FirmContextBanner } from '@/components/firm-context-banner';
 import { Badge, Card } from '@/components/ui';
 import { BarChart, ProgressBar } from '@/components/charts';
 import { CardSkeleton } from '@/components/skeleton';
@@ -30,6 +31,7 @@ export default function ReportsPage() {
     <RequireAuth>
       <AppShell>
         <CompanyNav companyId={companyId} />
+        <FirmContextBanner companyId={companyId} />
         <ReportsContent companyId={companyId} />
       </AppShell>
     </RequireAuth>

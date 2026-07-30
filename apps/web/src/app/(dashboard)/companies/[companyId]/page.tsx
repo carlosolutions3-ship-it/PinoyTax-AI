@@ -15,6 +15,7 @@ import {
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
+import { FirmContextBanner } from '@/components/firm-context-banner';
 import { Button } from '@/components/button';
 import { Badge, Card, ErrorText } from '@/components/ui';
 import { BarChart } from '@/components/charts';
@@ -61,6 +62,7 @@ export default function CompanyDashboardPage() {
     <RequireAuth>
       <AppShell>
         <CompanyNav companyId={companyId} />
+        <FirmContextBanner companyId={companyId} />
         <DashboardContent companyId={companyId} />
       </AppShell>
     </RequireAuth>

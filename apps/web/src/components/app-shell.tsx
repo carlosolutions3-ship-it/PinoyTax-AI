@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, Building2, FileText, LogOut, Menu, ShieldCheck, X } from 'lucide-react';
+import { Bell, Briefcase, Building2, FileText, LogOut, Menu, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Logo, LogoMark } from './brand/logo';
 import { Avatar } from './avatar';
 
 const NAV_LINKS = [
   { href: '/companies', label: 'Companies', icon: Building2 },
+  { href: '/firms', label: 'Firms', icon: Briefcase },
   { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/forms', label: 'Forms library', icon: FileText },
 ];
@@ -85,7 +86,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <nav className="flex-1 space-y-1 px-3">
         {links.map((link) => {
-          const isActive = pathname === link.href;
+          const isActive = pathname === link.href || pathname.startsWith(`${link.href}/`);
+          const isFirmContext = link.href === '/firms';
           const Icon = link.icon;
           return (
             <Link
@@ -93,7 +95,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               href={link.href}
               onClick={closeMobileNav}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                isActive
+                  ? isFirmContext
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'bg-brand-50 text-brand-700'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
