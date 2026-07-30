@@ -17,8 +17,11 @@ This is the authoritative, current list of what PinoyTax AI v1.0 intentionally d
 
 ## Multi-tenancy & billing
 
-- **Firm-level multi-client management (the `Firm` model) has no dedicated CRUD endpoints.** The schema supports an accounting firm managing multiple client companies, but there's no UI or API surface to create/manage a firm yet — `firm_admin` role permissions exist and are enforced, but nothing currently assigns that role at scale.
-- **No billing or subscription management.** There is no plan tier, payment integration, usage metering, or subscription lifecycle anywhere in the codebase.
+- **Firm architecture shipped in v1.1**: a top-level `Firm` entity can own/manage multiple client companies, with its own staff (invited once to the firm via `FirmMembership`, never per client) and firm-scoped RBAC (`FirmRole`/`FirmPermission`, separate from company-level RBAC). Firm staff get access to a specific client through `FirmCompanyAssignment`, a configurable subset of the same company permission codes company-level roles use — `PermissionsGuard` unions both sources, so a firm staffer needs no direct company role. A Firm Dashboard aggregates compliance/payroll/tax/deadline state and a grounded (never-hallucinated) AI portfolio summary across every client the caller can see.
+  - **Ownership transfer is not supported.** The only path to the `firm_owner` role is creating the firm; there is no "transfer ownership to another member" flow. A firm permanently loses management if its sole owner's account becomes unusable — same class of gap as `business_owner` at the company level.
+  - **No firm-level audit trail separate from the existing append-only `audit_logs` table** (firm actions are recorded there with `companyId = NULL`, not in a dedicated firm-scoped log).
+  - **Row-Level Security does not cover firm-scoped tables** (`firms`, `firm_memberships`, `firm_roles`, etc. — anything without a `company_id` column). The two new tables that do carry `company_id` (`firm_company_assignments`, `firm_client_invitations`) got the same dormant, not-yet-wired-in policy as every other tenant-scoped table — see the Security section below.
+- **No billing or subscription management, no cross-firm analytics/reporting beyond the portfolio dashboard, and no client-portal (client-facing) view.** These were explicit v1.1 non-goals, but the schema was deliberately designed so they're additive: new tables can hang a foreign key off `Firm.id` (e.g. a future `FirmSubscription`) without touching `Firm`, `FirmMembership`, or `FirmCompanyAssignment`.
 
 ## RBAC as shipped
 

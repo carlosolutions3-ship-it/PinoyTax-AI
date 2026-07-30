@@ -1,5 +1,22 @@
 # PinoyTax AI — Release Notes
 
+## v1.2.0 — Firm architecture (multi-client management)
+
+A top-level **Firm** entity that can own/manage multiple client companies, built as a parallel, additive layer on top of the existing company-level RBAC rather than a rework of it. Requested explicitly as part of the v1.1 release line's scope rather than deferred; shipped as v1.2.0 since it's genuinely new functionality, not a hardening/audit release like v1.1.0.
+
+### Added
+- **Firm entity & staff**: `Firm` (accounting firm / bookkeeping firm / tax consultancy) with its own staff roles (Owner, Admin, Accountant, Bookkeeper, Auditor) invited **once to the firm**, never per client — enforced by a `[userId, firmId]` unique constraint on `FirmMembership`. The firm's creator becomes the sole `firm_owner`; the last active owner can't be revoked or re-roled, so a firm can never end up without one.
+- **Firm-level RBAC, kept fully separate from company-level RBAC**: new `FirmRole`/`FirmPermission`/`FirmRolePermission` tables govern firm-scoped actions only (managing the firm, inviting staff, onboarding/removing clients, assigning staff to clients, viewing the dashboard). They never grant company data access by themselves.
+- **Per-client access with configurable permissions**: `FirmCompanyAssignment` grants a firm staffer access to one specific client, scoped to an explicit, admin-chosen subset of the *same* permission codes (`payroll:write`, `tax:compute`, etc.) that company-level roles already use. `PermissionsGuard` now unions a direct `UserCompanyRole` grant with any active firm assignment for the same company — every existing company route (payroll, tax, compliance, documents, …) works for firm staff with zero changes to those controllers/services.
+- **Two ways to onboard a client**: create a brand-new client company directly through the firm (creator gets full access automatically), or invite an already-existing, independently-owned company by TIN — which requires that company's own business owner to accept before the firm gets any access at all. A firm can never attach itself to a company unilaterally.
+- **Firm Dashboard**: portfolio-wide compliance %, overdue filings, open issue severity counts, latest payroll/tax status per client, a cross-portfolio upcoming-deadlines feed, and a short AI-generated portfolio summary. Scope-aware — Owner/Admin see every client, other staff see only clients they're explicitly assigned to. The AI summary is handed only real, already-computed numbers and asked to prioritize/phrase them, never to originate a fact or figure — the same anti-hallucination discipline as the AI Tax Assistant.
+- **Frontend**: a full `/firms` workspace (firm list + creation, dashboard, staff management, client management, per-client access management, firm settings), using a distinct indigo accent so "Firm workspace" reads as visually different from the brand-emerald company workspace at a glance. Company workspace pages show a "Managed by \<Firm\>" banner with a link back to the firm dashboard when applicable. The business owner's Companies page gained a "firm engagement request" accept/decline surface.
+- Extended the dormant, defense-in-depth Row-Level Security convention (see v1.0/v1.1 notes below) to the two new tables that carry a `company_id` column.
+- Unit tests for the new guard and service (invite-once semantics, last-owner protection, scope-aware client visibility, permission-code validation, dashboard aggregation math) and a new end-to-end Playwright journey covering firm creation → client onboarding → dashboard rollup → context banner.
+
+### Explicitly out of scope for this release
+Billing/subscription management, cross-firm analytics beyond the portfolio dashboard, a client-facing portal, and firm-ownership transfer. The schema was designed so these are additive later (new tables hang a foreign key off `Firm.id`) rather than requiring a rework of what shipped here — see `KNOWN_LIMITATIONS.md`.
+
 ## v1.0.0 — General availability
 
 The first complete, end-to-end verified release of PinoyTax AI: full backend API, full frontend UI across every module, a premium redesigned interface, and a production Docker Compose setup for every service including the previously-missing frontend image.

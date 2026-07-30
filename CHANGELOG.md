@@ -5,12 +5,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). See `REL
 ## [Unreleased]
 
 ### Still to build
-Everything the frontend was originally missing (payroll, tax, documents, AI assistant, settings, admin, reports, forms, notifications, profile pages), the web Dockerfile, CI/CD, and an initial E2E/unit test suite have all since been built — see "Added" below. What's genuinely still open:
+Everything the frontend was originally missing (payroll, tax, documents, AI assistant, settings, admin, reports, forms, notifications, profile pages), the web Dockerfile, CI/CD, an initial E2E/unit test suite, and (as of v1.2.0) a full Firm/multi-client-management architecture have all since been built — see "Added" below and `RELEASE.md`. What's genuinely still open:
 - **Tax rate accuracy**: several seeded tax rates (`apps/api/prisma/seed.ts`) are explicitly marked `SCAFFOLD VALUE, VERIFY BEFORE USE` — flat approximations (e.g. EWT, SSS) standing in for the real bracketed government tables. This is the single highest-priority item before handling a real customer's numbers; see `PRODUCTION_CHECKLIST.md` and `KNOWN_LIMITATIONS.md`.
 - Wiring the E2E suite (`e2e/`) into CI — it runs locally today but isn't yet a required check on `main`/PRs.
 - Field-level encryption for TIN and government ID numbers.
 - Wiring Row-Level Security to an actual live per-request control (currently infrastructure-in-place only, application-layer `companyId` scoping is the real current boundary — see `SECURITY.md`).
-- Firm-level multi-client CRUD endpoints (schema exists, no controller yet).
 - Branch and company-document-linking CRUD endpoints beyond what's already built (schema exists for the rest, no controller yet).
 - Billing/subscription management (not in original scope, flagged as a pre-launch gap).
 - A distributed lock for the deadline-reminder cron if the worker is ever scaled beyond one replica (safe today at one replica — see `NotificationsSchedulingModule`'s doc comment).

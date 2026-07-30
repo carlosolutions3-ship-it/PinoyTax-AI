@@ -58,3 +58,35 @@ From the staff table, click **Revoke** next to any non-owner staff member. Revok
 ## Branch management
 
 Under **Settings → Branches**, a company can register additional business locations (name, address, RDO code) beyond its main registered address. Branches can be deactivated and reactivated but not deleted, again for audit continuity. Branch management requires `company:write` — Business owner and Firm admin only.
+
+## Firms (multi-client management)
+
+A **Firm** (accounting firm, bookkeeping firm, or tax consultancy) is a separate top-level entity from a company — set up at **Firms** in the main sidebar, distinct from the **Companies** section. A firm can own/manage multiple client companies and has its own staff, invited once to the firm rather than to each client separately. This is a second, parallel RBAC system — firm roles never grant access to a client's payroll/tax/compliance data by themselves; that access is granted per client via an explicit assignment (see below). A company's own staff (business owner, accountant, bookkeeper — the roles in the table above) are completely unaffected by whether that company happens to be firm-managed.
+
+### Firm roles and what they can do
+
+| Firm role | firm profile | firm staff | clients (add/remove) | assign staff to clients | dashboard |
+|---|---|---|---|---|---|
+| **Firm owner** | edit | invite/revoke/re-role | yes | yes | view |
+| **Firm admin** | edit | invite/revoke/re-role | yes | yes | view |
+| **Accountant** | — | — | — | — | view |
+| **Bookkeeper** | — | — | — | — | view |
+| **Auditor** | — | — | — | — | view |
+
+The firm's creator is automatically **Firm owner**, the only role reachable that way — it can't be assigned via invite or role-change, and the last active owner can't be revoked or re-roled (the API returns `CANNOT_REMOVE_LAST_OWNER`), so a firm can never be left without one. Every other role sees the portfolio dashboard but has **no client access at all** until explicitly assigned to a client.
+
+### Onboarding a client company
+
+A firm can bring in a client two ways, from the firm's **Clients** tab:
+1. **New client** — creates a brand-new company directly under the firm. The creating staff member is automatically granted full access to it (every permission code) so the client isn't left inaccessible.
+2. **Invite existing company** — look up an already-registered, independently-owned company by TIN and send an engagement request. **The company's own business owner must accept it** (visible as a "Firm engagement request" on their Companies page) — a firm can never attach itself to someone else's company unilaterally.
+
+**Remove** on the Clients tab detaches a client from the firm (and revokes every firm staff assignment on it) without deleting the company itself.
+
+### Assigning staff to a client, with scoped permissions
+
+From a client's **Manage access** page, a firm admin/owner picks a firm staff member and checks exactly which of the same permission codes used by company-level roles (`company:read`, `payroll:write`, `tax:compute`, etc.) to grant — e.g. read-only on one client, full accountant-equivalent access on another. This is enforced the same way a direct company role is: `PermissionsGuard` on every company route checks both a direct `user_company_role` grant and an active firm assignment, and unions whatever permissions either source provides. Revoking the assignment (or the staff member's firm membership) removes that access immediately.
+
+### Firm Dashboard
+
+Shows every client the caller can see — the full portfolio for Firm owner/admin, only their own assigned clients for Accountant/Bookkeeper/Auditor — with per-client compliance %, overdue filings, open issue counts, latest payroll/tax status, a cross-portfolio upcoming-deadlines feed, and a short AI-generated portfolio summary. That summary is only ever handed the real, already-computed numbers shown on the dashboard and asked to prioritize/phrase them — same anti-hallucination discipline as the AI Tax Assistant, never asked to invent a figure.
