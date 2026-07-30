@@ -124,6 +124,7 @@ function TaxContent({ companyId }: { companyId: string }) {
               {computations.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Select
+                    aria-label="Filter by type"
                     value={typeFilter}
                     onChange={(e) => setTypeFilter(e.target.value as ComputationType | '')}
                     className="w-48"
@@ -136,6 +137,7 @@ function TaxContent({ companyId }: { companyId: string }) {
                     ))}
                   </Select>
                   <Select
+                    aria-label="Filter by status"
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as ComputationStatus | '')}
                     className="w-36"
@@ -256,6 +258,10 @@ function ComputeTaxForm({ companyId, onComputed }: { companyId: string; onComput
     e.preventDefault();
     setError(null);
     setResult(null);
+    if (periodEnd < periodStart) {
+      setError('Period end must be on or after period start.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const numericFields: Partial<Record<NumericField, number>> = {};

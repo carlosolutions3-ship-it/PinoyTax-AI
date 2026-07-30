@@ -158,6 +158,7 @@ function NotificationsContent() {
           <h2 className="font-semibold">Recent notifications</h2>
           {notifications.length > 0 && (
             <Select
+              aria-label="Filter by status"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as NotificationStatus | '')}
               className="w-36"

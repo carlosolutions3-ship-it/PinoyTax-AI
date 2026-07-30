@@ -73,7 +73,7 @@ function SecurityEventsSection() {
       {!isLoading && events.length === 0 ? (
         <p className="text-sm text-slate-500">No security events recorded.</p>
       ) : (
-        <div className="max-h-96 overflow-y-auto">
+        <div className="max-h-96 overflow-auto">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
@@ -131,7 +131,7 @@ function AuditLogsSection() {
             placeholder="00000000-0000-0000-0000-000000000000"
             value={companyId}
             onChange={(e) => setCompanyId(e.target.value)}
-            className="w-96"
+            className="w-full max-w-96"
           />
         </Field>
         <Button type="submit" isLoading={isLoading}>
@@ -141,7 +141,7 @@ function AuditLogsSection() {
       <ErrorText>{error}</ErrorText>
 
       {logs && (
-        <div className="mt-4 max-h-96 overflow-y-auto">
+        <div className="mt-4 max-h-96 overflow-auto">
           {logs.length === 0 ? (
             <p className="text-sm text-slate-500">No audit log entries for this company.</p>
           ) : (

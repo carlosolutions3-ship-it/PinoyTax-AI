@@ -182,6 +182,7 @@ function PayrollContent({ companyId }: { companyId: string }) {
           <div className="flex items-center gap-2">
             {runs.length > 0 && (
               <Select
+                aria-label="Filter by status"
                 value={runStatusFilter}
                 onChange={(e) => setRunStatusFilter(e.target.value as PayrollRunStatus | '')}
                 className="w-40"
@@ -374,6 +375,10 @@ function CreateRunForm({ companyId, onCreated }: { companyId: string; onCreated:
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (periodEnd < periodStart) {
+      setError('Period end must be on or after period start.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       await payrollApi.createRun(companyId, { periodStart, periodEnd });

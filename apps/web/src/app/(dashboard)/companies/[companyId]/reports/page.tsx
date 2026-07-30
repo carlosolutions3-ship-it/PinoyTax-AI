@@ -7,7 +7,9 @@ import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
 import { Badge, Card } from '@/components/ui';
-import { BarChart } from '@/components/charts';
+import { BarChart, ProgressBar } from '@/components/charts';
+import { CardSkeleton } from '@/components/skeleton';
+import { StatCard } from '@/components/stat-card';
 import { complianceApi, payrollApi, taxApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
 import { formatCurrency, formatDate } from '@/lib/format';
@@ -118,21 +120,22 @@ function ReportsContent({ companyId }: { companyId: string }) {
         </span>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Reports</h1>
       </div>
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
 
       <Card>
         <h2 className="mb-4 font-semibold">Payroll summary (finalized runs)</h2>
-        {payrollForbidden ? (
+        {isLoading ? (
+          <CardSkeleton count={4} />
+        ) : payrollForbidden ? (
           <p className="text-sm text-slate-500">Your role doesn&apos;t have access to payroll data.</p>
         ) : finalizedRuns.length === 0 ? (
           <p className="text-sm text-slate-500">No finalized payroll runs yet.</p>
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <SummaryTile label="Total gross pay" value={formatCurrency(payrollTotals.grossPay)} />
-              <SummaryTile label="Total deductions" value={formatCurrency(payrollTotals.totalDeductions)} />
-              <SummaryTile label="Total net pay" value={formatCurrency(payrollTotals.netPay)} />
-              <SummaryTile label="Total withholding tax" value={formatCurrency(payrollTotals.withholdingTax)} />
+              <StatCard label="Total gross pay" value={formatCurrency(payrollTotals.grossPay)} />
+              <StatCard label="Total deductions" value={formatCurrency(payrollTotals.totalDeductions)} />
+              <StatCard label="Total net pay" value={formatCurrency(payrollTotals.netPay)} />
+              <StatCard label="Total withholding tax" value={formatCurrency(payrollTotals.withholdingTax)} />
             </div>
             <div className="mt-4">
               <h3 className="mb-2 text-xs uppercase tracking-wide text-slate-500">Net pay by period</h3>
@@ -179,13 +182,15 @@ function ReportsContent({ companyId }: { companyId: string }) {
 
       <Card>
         <h2 className="mb-4 font-semibold">Tax summary (confirmed computations)</h2>
-        {taxForbidden ? (
+        {isLoading ? (
+          <CardSkeleton count={1} />
+        ) : taxForbidden ? (
           <p className="text-sm text-slate-500">Your role doesn&apos;t have access to tax data.</p>
         ) : confirmedTax.length === 0 ? (
           <p className="text-sm text-slate-500">No confirmed tax computations yet.</p>
         ) : (
           <>
-            <SummaryTile label="Total confirmed tax" value={formatCurrency(totalConfirmedTax)} />
+            <StatCard label="Total confirmed tax" value={formatCurrency(totalConfirmedTax)} />
             <div className="mt-4">
               <BarChart
                 data={Object.entries(taxByType).map(([type, total]) => ({
@@ -219,7 +224,9 @@ function ReportsContent({ companyId }: { companyId: string }) {
 
       <Card>
         <h2 className="mb-4 font-semibold">Compliance summary</h2>
-        {complianceForbidden ? (
+        {isLoading ? (
+          <CardSkeleton count={4} />
+        ) : complianceForbidden ? (
           <p className="text-sm text-slate-500">Your role doesn&apos;t have access to compliance data.</p>
         ) : complianceStatus.length === 0 ? (
           <p className="text-sm text-slate-500">
@@ -231,7 +238,14 @@ function ReportsContent({ companyId }: { companyId: string }) {
               <Card key={s.id} className="bg-slate-50">
                 <p className="text-xs uppercase tracking-wide text-slate-500">{s.category}</p>
                 <p className="mt-1 text-2xl font-semibold">{s.compliancePercentage}%</p>
-                <div className="mt-1 flex flex-wrap gap-1">
+                <div className="mt-2">
+                  <ProgressBar
+                    value={Number(s.compliancePercentage)}
+                    color={s.overdueCount > 0 ? '#dc2626' : Number(s.compliancePercentage) < 70 ? '#d97706' : '#16a34a'}
+                    label={`${s.category}: ${s.compliancePercentage}% compliant`}
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
                   <Badge tone="green">{s.completedCount} done</Badge>
                   <Badge tone="amber">{s.pendingCount} pending</Badge>
                   {s.overdueCount > 0 && <Badge tone="red">{s.overdueCount} overdue</Badge>}
@@ -241,15 +255,6 @@ function ReportsContent({ companyId }: { companyId: string }) {
           </div>
         )}
       </Card>
-    </div>
-  );
-}
-
-function SummaryTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
     </div>
   );
 }
