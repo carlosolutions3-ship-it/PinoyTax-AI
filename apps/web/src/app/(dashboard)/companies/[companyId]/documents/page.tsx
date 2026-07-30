@@ -191,8 +191,10 @@ function DocumentsContent({ companyId }: { companyId: string }) {
 
         {isLoading ? (
           <TableSkeleton rows={3} columns={3} />
+        ) : documents.length === 0 ? (
+          <EmptyState title="No documents yet" description="Upload your first document to get started." />
         ) : visibleDocuments.length === 0 ? (
-          <EmptyState title="No documents found" description="No documents match these filters yet." />
+          <EmptyState title="No matching documents" description="Try a different search or filter." />
         ) : (
           <>
             <ul className="flex flex-col gap-2">
