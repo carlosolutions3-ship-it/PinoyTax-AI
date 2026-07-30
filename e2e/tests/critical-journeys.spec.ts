@@ -125,6 +125,46 @@ test.describe('PinoyTax AI critical journeys', () => {
     await expect(accountantPage.getByText('accountant', { exact: true })).toBeVisible();
   });
 
+  test('owner sets up a firm, onboards a client through it, and the client shows the firm context banner', async () => {
+    await page.goto('/firms');
+    await expect(page).toHaveURL(/\/firms/, { timeout: 10_000 });
+
+    await page.getByRole('button', { name: 'Add firm' }).click();
+    await page.locator('#firmName').fill(FIXTURES.firm.firmName);
+    await page.locator('#contactEmail').fill(FIXTURES.firm.contactEmail);
+    await page.getByRole('button', { name: 'Create firm' }).click();
+    await expect(page.getByText(FIXTURES.firm.firmName)).toBeVisible({ timeout: 10_000 });
+
+    await page.getByText(FIXTURES.firm.firmName).click();
+    await expect(page).toHaveURL(/\/firms\/[a-f0-9-]+$/, { timeout: 10_000 });
+    const firmUrl = page.url();
+    await expect(page.getByText('Client companies', { exact: true })).toBeVisible();
+
+    await page.locator('a[href$="/clients"]').click();
+    await page.getByRole('button', { name: 'New client' }).click();
+    await page.locator('#businessName').fill(FIXTURES.firmClientCompany.businessName);
+    await page.locator('#tin').fill(FIXTURES.firmClientCompany.tin);
+    await page.getByRole('button', { name: 'Create client' }).click();
+    await expect(page.getByText(FIXTURES.firmClientCompany.businessName)).toBeVisible({ timeout: 10_000 });
+
+    // Dashboard aggregates the newly onboarded client into the portfolio.
+    await page.goto(firmUrl);
+    await expect(page.getByText('Client companies', { exact: true })).toBeVisible();
+    await expect(page.getByText(FIXTURES.firmClientCompany.businessName)).toBeVisible({ timeout: 10_000 });
+
+    // The client's own company workspace shows it's firm-managed — the
+    // Firm-vs-Company context distinction — with a link back to the firm.
+    // Business name is plain text on both the dashboard and clients table
+    // (not itself a link); "Open" is the one link into the company workspace.
+    await page.locator('a[href$="/clients"]').click();
+    await page.getByRole('link', { name: 'Open' }).click();
+    await expect(page).toHaveURL(/\/companies\/[a-f0-9-]+$/, { timeout: 10_000 });
+    await expect(page.getByRole('link', { name: 'Back to firm dashboard' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(FIXTURES.firm.firmName)).toBeVisible();
+    await page.getByRole('link', { name: 'Back to firm dashboard' }).click();
+    await expect(page).toHaveURL(firmUrl);
+  });
+
   test('accountant runs payroll and computes a tax return', async () => {
     // business_owner deliberately lacks payroll:write and tax:compute (see
     // ADMIN_MANUAL.md), so this journey is only reachable by an

@@ -19,21 +19,35 @@ import { FIXTURES } from './fixtures';
 export default async function globalSetup(): Promise<void> {
   const prisma = new PrismaClient();
   try {
-    await prisma.$executeRawUnsafe(
-      `UPDATE audit.audit_logs SET company_id = NULL WHERE company_id = (SELECT id FROM org.companies WHERE tin = $1)`,
-      FIXTURES.company.tin,
-    );
-    // payroll.payslips -> payroll.employees has no ON DELETE rule (payslips
-    // are financial records deliberately not silently destroyed by an
-    // employee-record change), so Company's cascade delete fails once
-    // payroll has actually been run for it — not reachable from any current
-    // UI flow (there's no "delete company" feature yet), but real enough
-    // for this fixture's repeated create/teardown cycle to hit it.
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM payroll.payslips WHERE employee_id IN (SELECT id FROM payroll.employees WHERE company_id = (SELECT id FROM org.companies WHERE tin = $1))`,
-      FIXTURES.company.tin,
-    );
-    await prisma.company.deleteMany({ where: { tin: FIXTURES.company.tin } });
+    for (const tin of [FIXTURES.company.tin, FIXTURES.firmClientCompany.tin]) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE audit.audit_logs SET company_id = NULL WHERE company_id = (SELECT id FROM org.companies WHERE tin = $1)`,
+        tin,
+      );
+      // payroll.payslips -> payroll.employees has no ON DELETE rule (payslips
+      // are financial records deliberately not silently destroyed by an
+      // employee-record change), so Company's cascade delete fails once
+      // payroll has actually been run for it — not reachable from any current
+      // UI flow (there's no "delete company" feature yet), but real enough
+      // for this fixture's repeated create/teardown cycle to hit it.
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM payroll.payslips WHERE employee_id IN (SELECT id FROM payroll.employees WHERE company_id = (SELECT id FROM org.companies WHERE tin = $1))`,
+        tin,
+      );
+      await prisma.company.deleteMany({ where: { tin } });
+    }
+
+    // Firm cleanup: the fixture firm (and any membership/assignment
+    // hanging off it) is torn down and recreated fresh each run, same
+    // rationale as the company above — "create a firm" stays a real,
+    // exercised step every time rather than a no-op against a leftover row.
+    const staleFirm = await prisma.firm.findFirst({ where: { firmName: FIXTURES.firm.firmName } });
+    if (staleFirm) {
+      await prisma.firmCompanyAssignment.deleteMany({ where: { firmMembership: { firmId: staleFirm.id } } });
+      await prisma.firmClientInvitation.deleteMany({ where: { firmId: staleFirm.id } });
+      await prisma.firmMembership.deleteMany({ where: { firmId: staleFirm.id } });
+      await prisma.firm.delete({ where: { id: staleFirm.id } });
+    }
 
     for (const user of [FIXTURES.owner, FIXTURES.accountant]) {
       const passwordHash = await argon2.hash(user.password, { type: argon2.argon2id });

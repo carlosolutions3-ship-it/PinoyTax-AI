@@ -19,4 +19,12 @@ export const FIXTURES = {
     tin: '000-000-001',
     address: '123 Test Street, Makati City',
   },
+  firm: {
+    firmName: 'E2E Test Firm',
+    contactEmail: 'e2e-firm-contact@pinoytax.test',
+  },
+  firmClientCompany: {
+    businessName: 'E2E Firm Client Co.',
+    tin: '000-000-002',
+  },
 };
