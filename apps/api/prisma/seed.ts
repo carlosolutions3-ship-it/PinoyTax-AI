@@ -108,6 +108,62 @@ function humanizeRoleCode(code: string): string {
 }
 
 /**
+ * FIRM-LEVEL RBAC — deliberately separate from the company-level
+ * roles/permissions seeded above. Firm roles govern firm-scoped actions
+ * only (managing the firm, inviting firm staff, onboarding/removing
+ * clients, assigning staff to clients, viewing the portfolio dashboard).
+ * They never grant company resource access by themselves — see
+ * FirmCompanyAssignment / PermissionsGuard for how that's granted
+ * separately, using the *same* identity.Permission codes seeded above.
+ */
+const FIRM_PERMISSIONS: { code: string; label: string }[] = [
+  { code: 'firm:dashboard:view', label: 'View the firm portfolio dashboard' },
+  { code: 'firm:manage', label: 'Edit firm profile/settings' },
+  { code: 'firm:staff:invite', label: 'Invite, list, and revoke firm staff' },
+  { code: 'firm:staff:manage_roles', label: "Change a firm staff member's role" },
+  { code: 'firm:clients:manage', label: 'Create, invite, and remove client companies' },
+  { code: 'firm:clients:assign', label: 'Assign firm staff to client companies with scoped permissions' },
+  { code: 'firm:billing:manage', label: 'Manage firm billing and subscription (reserved for a future release)' },
+];
+
+const FIRM_ROLE_PERMISSIONS: Record<string, string[]> = {
+  firm_owner: FIRM_PERMISSIONS.map((p) => p.code),
+  firm_admin: FIRM_PERMISSIONS.map((p) => p.code).filter((c) => c !== 'firm:billing:manage'),
+  firm_accountant: ['firm:dashboard:view'],
+  firm_bookkeeper: ['firm:dashboard:view'],
+  firm_auditor: ['firm:dashboard:view'],
+};
+
+async function seedFirmRolesAndPermissions() {
+  for (const permission of FIRM_PERMISSIONS) {
+    await prisma.firmPermission.upsert({
+      where: { code: permission.code },
+      create: permission,
+      update: { label: permission.label },
+    });
+  }
+
+  for (const [roleCode, permissionCodes] of Object.entries(FIRM_ROLE_PERMISSIONS)) {
+    const role = await prisma.firmRole.upsert({
+      where: { code: roleCode },
+      create: { code: roleCode, name: humanizeRoleCode(roleCode) },
+      update: { name: humanizeRoleCode(roleCode) },
+    });
+
+    for (const permissionCode of permissionCodes) {
+      const permission = await prisma.firmPermission.findUniqueOrThrow({
+        where: { code: permissionCode },
+      });
+      await prisma.firmRolePermission.upsert({
+        where: { firmRoleId_firmPermissionId: { firmRoleId: role.id, firmPermissionId: permission.id } },
+        create: { firmRoleId: role.id, firmPermissionId: permission.id },
+        update: {},
+      });
+    }
+  }
+}
+
+/**
  * SEED TAX RULES — these are ILLUSTRATIVE STARTING VALUES matching commonly
  * cited Philippine rates as of this codebase's authoring, each with a
  * source_reference field for auditability. Before relying on this platform
@@ -601,6 +657,7 @@ async function seedPlatformAdmin() {
 
 async function main() {
   await seedRolesAndPermissions();
+  await seedFirmRolesAndPermissions();
   await seedTaxRules();
   await seedFormTemplates();
   await seedPlatformAdmin();

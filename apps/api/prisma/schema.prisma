@@ -31,52 +31,56 @@ enum UserStatus {
 }
 
 model User {
-  id                  String    @id @default(uuid())
-  email               String    @unique
-  passwordHash        String?   @map("password_hash")
+  id                  String       @id @default(uuid())
+  email               String       @unique
+  passwordHash        String?      @map("password_hash")
   authProvider        AuthProvider @default(local) @map("auth_provider")
-  providerUserId      String?   @map("provider_user_id")
-  firstName           String    @map("first_name")
-  lastName            String    @map("last_name")
-  phoneNumber         String?   @map("phone_number")
-  isEmailVerified     Boolean   @default(false) @map("is_email_verified")
-  isPlatformAdmin     Boolean   @default(false) @map("is_platform_admin")
-  status              UserStatus @default(active)
-  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime? @map("locked_until")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  providerUserId      String?      @map("provider_user_id")
+  firstName           String       @map("first_name")
+  lastName            String       @map("last_name")
+  phoneNumber         String?      @map("phone_number")
+  isEmailVerified     Boolean      @default(false) @map("is_email_verified")
+  isPlatformAdmin     Boolean      @default(false) @map("is_platform_admin")
+  status              UserStatus   @default(active)
+  failedLoginAttempts Int          @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?    @map("locked_until")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
 
-  sessions              Session[]
-  loginHistory          LoginHistory[]
-  passwordResetTokens   PasswordResetToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  companyRoles          UserCompanyRole[]
-  invitationsSent       UserCompanyRole[] @relation("InvitedBy")
-  auditLogs             AuditLog[]
-  securityEvents        SecurityEvent[]
-  aiConversations       AiConversation[]
-  notifications         Notification[]
-  notificationPrefs     NotificationPreference[]
+  sessions                  Session[]
+  loginHistory              LoginHistory[]
+  passwordResetTokens       PasswordResetToken[]
+  emailVerificationTokens   EmailVerificationToken[]
+  companyRoles              UserCompanyRole[]
+  invitationsSent           UserCompanyRole[]        @relation("InvitedBy")
+  auditLogs                 AuditLog[]
+  securityEvents            SecurityEvent[]
+  aiConversations           AiConversation[]
+  notifications             Notification[]
+  notificationPrefs         NotificationPreference[]
+  firmMemberships           FirmMembership[]
+  firmInvitationsSent       FirmMembership[]         @relation("FirmInvitedBy")
+  firmAssignmentsMade       FirmCompanyAssignment[]  @relation("FirmAssignedBy")
+  firmClientInvitationsSent FirmClientInvitation[]   @relation("FirmClientInvitedBy")
 
   @@map("users")
   @@schema("identity")
 }
 
 model Session {
-  id                 String    @id @default(uuid())
-  userId             String    @map("user_id")
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  refreshTokenHash   String    @map("refresh_token_hash")
-  deviceFingerprint  String    @map("device_fingerprint")
-  deviceName         String?   @map("device_name")
-  ipAddress          String?   @map("ip_address")
-  userAgent          String?   @map("user_agent")
-  isRememberMe       Boolean   @default(false) @map("is_remember_me")
-  lastActiveAt       DateTime  @default(now()) @map("last_active_at")
-  expiresAt          DateTime  @map("expires_at")
-  revokedAt          DateTime? @map("revoked_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash  String    @map("refresh_token_hash")
+  deviceFingerprint String    @map("device_fingerprint")
+  deviceName        String?   @map("device_name")
+  ipAddress         String?   @map("ip_address")
+  userAgent         String?   @map("user_agent")
+  isRememberMe      Boolean   @default(false) @map("is_remember_me")
+  lastActiveAt      DateTime  @default(now()) @map("last_active_at")
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   @@index([userId])
   @@map("sessions")
@@ -138,7 +142,7 @@ model Role {
   name        String
   description String?
 
-  permissions     RolePermission[]
+  permissions      RolePermission[]
   userCompanyRoles UserCompanyRole[]
 
   @@map("roles")
@@ -150,7 +154,8 @@ model Permission {
   code  String @unique // e.g. payroll:write, filings:approve
   label String
 
-  roles RolePermission[]
+  roles                  RolePermission[]
+  firmCompanyAssignments FirmCompanyAssignmentPermission[]
 
   @@map("permissions")
   @@schema("identity")
@@ -187,10 +192,164 @@ model Firm {
   contactNumber String?  @map("contact_number")
   status        String   @default("active")
   createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  companies Company[]
+  companies         Company[]
+  memberships       FirmMembership[]
+  clientInvitations FirmClientInvitation[]
 
   @@map("firms")
+  @@schema("org")
+}
+
+// Firm-level RBAC, deliberately separate from identity.Role/Permission
+// (company-level RBAC): a Firm's own staff roles govern firm-scoped actions
+// (managing the firm, inviting firm staff, onboarding/removing clients,
+// assigning staff to clients, viewing the portfolio dashboard). They never
+// grant company resource access by themselves — that only happens through
+// an explicit FirmCompanyAssignment, which is expressed in the *existing*
+// identity.Permission vocabulary so a firm-granted grant and a direct
+// company-role grant are checked the same way by PermissionsGuard.
+model FirmRole {
+  id          String  @id @default(uuid())
+  code        String  @unique // firm_owner, firm_admin, firm_accountant, firm_bookkeeper, firm_auditor
+  name        String
+  description String?
+
+  permissions FirmRolePermission[]
+  memberships FirmMembership[]
+
+  @@map("firm_roles")
+  @@schema("org")
+}
+
+model FirmPermission {
+  id    String @id @default(uuid())
+  code  String @unique // e.g. firm:manage, firm:clients:assign
+  label String
+
+  roles FirmRolePermission[]
+
+  @@map("firm_permissions")
+  @@schema("org")
+}
+
+model FirmRolePermission {
+  firmRoleId       String         @map("firm_role_id")
+  firmRole         FirmRole       @relation(fields: [firmRoleId], references: [id], onDelete: Cascade)
+  firmPermissionId String         @map("firm_permission_id")
+  firmPermission   FirmPermission @relation(fields: [firmPermissionId], references: [id], onDelete: Cascade)
+
+  @@id([firmRoleId, firmPermissionId])
+  @@map("firm_role_permissions")
+  @@schema("org")
+}
+
+enum FirmMembershipStatus {
+  pending
+  active
+  revoked
+
+  @@schema("org")
+}
+
+// A firm staff member. Invited once to the FIRM (not per client company) —
+// enforced by the [userId, firmId] unique constraint. Access to individual
+// client companies is granted separately via FirmCompanyAssignment.
+model FirmMembership {
+  id          String               @id @default(uuid())
+  firmId      String               @map("firm_id")
+  firm        Firm                 @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  userId      String               @map("user_id")
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firmRoleId  String               @map("firm_role_id")
+  firmRole    FirmRole             @relation(fields: [firmRoleId], references: [id])
+  invitedById String?              @map("invited_by")
+  invitedBy   User?                @relation("FirmInvitedBy", fields: [invitedById], references: [id])
+  status      FirmMembershipStatus @default(pending)
+  invitedAt   DateTime             @default(now()) @map("invited_at")
+  acceptedAt  DateTime?            @map("accepted_at")
+
+  assignments FirmCompanyAssignment[]
+
+  @@unique([userId, firmId])
+  @@index([firmId])
+  @@map("firm_memberships")
+  @@schema("org")
+}
+
+enum FirmCompanyAssignmentStatus {
+  active
+  revoked
+
+  @@schema("org")
+}
+
+// Grants one firm staff member (via their FirmMembership) access to one
+// client company, scoped to an explicit, configurable subset of the same
+// identity.Permission codes used by direct company roles. PermissionsGuard
+// unions this with any direct UserCompanyRole grant for the same company.
+model FirmCompanyAssignment {
+  id               String                      @id @default(uuid())
+  firmMembershipId String                      @map("firm_membership_id")
+  firmMembership   FirmMembership              @relation(fields: [firmMembershipId], references: [id], onDelete: Cascade)
+  companyId        String                      @map("company_id")
+  company          Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedById     String?                     @map("assigned_by")
+  assignedBy       User?                       @relation("FirmAssignedBy", fields: [assignedById], references: [id])
+  status           FirmCompanyAssignmentStatus @default(active)
+  createdAt        DateTime                    @default(now()) @map("created_at")
+  updatedAt        DateTime                    @updatedAt @map("updated_at")
+
+  permissions FirmCompanyAssignmentPermission[]
+
+  @@unique([firmMembershipId, companyId])
+  @@index([companyId])
+  @@map("firm_company_assignments")
+  @@schema("org")
+}
+
+model FirmCompanyAssignmentPermission {
+  assignmentId String                @map("assignment_id")
+  assignment   FirmCompanyAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  permissionId String                @map("permission_id")
+  permission   Permission            @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([assignmentId, permissionId])
+  @@map("firm_company_assignment_permissions")
+  @@schema("org")
+}
+
+enum FirmClientInvitationStatus {
+  pending
+  accepted
+  declined
+  revoked
+
+  @@schema("org")
+}
+
+// A firm's request to manage an already-existing, independently-owned
+// client company. Requires the company's business_owner to accept (see
+// FirmService.respondToClientInvitation) — a firm can never attach a
+// company to itself unilaterally. Not used when a firm creates a brand-new
+// client company directly (FirmService.createClientCompany sets
+// Company.firmId at creation time instead).
+model FirmClientInvitation {
+  id          String                     @id @default(uuid())
+  firmId      String                     @map("firm_id")
+  firm        Firm                       @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  companyId   String                     @map("company_id")
+  company     Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invitedById String?                    @map("invited_by")
+  invitedBy   User?                      @relation("FirmClientInvitedBy", fields: [invitedById], references: [id])
+  status      FirmClientInvitationStatus @default(pending)
+  invitedAt   DateTime                   @default(now()) @map("invited_at")
+  respondedAt DateTime?                  @map("responded_at")
+
+  @@index([firmId])
+  @@index([companyId, status])
+  @@map("firm_client_invitations")
   @@schema("org")
 }
 
@@ -226,58 +385,60 @@ enum CompanyStatus {
 }
 
 model Company {
-  id                      String            @id @default(uuid())
-  firmId                  String?           @map("firm_id")
-  firm                    Firm?             @relation(fields: [firmId], references: [id])
-  businessName            String            @map("business_name")
-  tradeName               String?           @map("trade_name")
-  businessType            BusinessType      @map("business_type")
-  taxpayerClassification  String?           @map("taxpayer_classification")
-  vatClassification       VatClassification @map("vat_classification")
-  tin                     String            @unique
-  rdoCode                 String?           @map("rdo_code")
-  secRegistrationNumber   String?           @map("sec_registration_number")
-  dtiRegistrationNumber   String?           @map("dti_registration_number")
-  cdaRegistrationNumber   String?           @map("cda_registration_number")
-  businessAddress         String?           @map("business_address")
-  email                   String?
-  contactNumber           String?           @map("contact_number")
-  registrationDate        DateTime?         @map("registration_date")
-  fiscalYearStart         DateTime?         @map("fiscal_year_start")
-  accountingMethod        AccountingMethod  @default(accrual) @map("accounting_method")
-  currency                String            @default("PHP")
-  logoUrl                 String?           @map("logo_url")
-  status                  CompanyStatus     @default(active)
-  createdAt               DateTime          @default(now()) @map("created_at")
-  updatedAt               DateTime          @updatedAt @map("updated_at")
+  id                     String            @id @default(uuid())
+  firmId                 String?           @map("firm_id")
+  firm                   Firm?             @relation(fields: [firmId], references: [id])
+  businessName           String            @map("business_name")
+  tradeName              String?           @map("trade_name")
+  businessType           BusinessType      @map("business_type")
+  taxpayerClassification String?           @map("taxpayer_classification")
+  vatClassification      VatClassification @map("vat_classification")
+  tin                    String            @unique
+  rdoCode                String?           @map("rdo_code")
+  secRegistrationNumber  String?           @map("sec_registration_number")
+  dtiRegistrationNumber  String?           @map("dti_registration_number")
+  cdaRegistrationNumber  String?           @map("cda_registration_number")
+  businessAddress        String?           @map("business_address")
+  email                  String?
+  contactNumber          String?           @map("contact_number")
+  registrationDate       DateTime?         @map("registration_date")
+  fiscalYearStart        DateTime?         @map("fiscal_year_start")
+  accountingMethod       AccountingMethod  @default(accrual) @map("accounting_method")
+  currency               String            @default("PHP")
+  logoUrl                String?           @map("logo_url")
+  status                 CompanyStatus     @default(active)
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
 
-  branches          Branch[]
-  documents         CompanyDocument[]
-  userRoles         UserCompanyRole[]
-  employees         Employee[]
-  payrollRuns       PayrollRun[]
-  taxComputations   TaxComputation[]
-  filingDeadlines   FilingDeadline[]
-  complianceStatus  ComplianceStatus[]
-  flaggedIssues     FlaggedIssue[]
-  vaultDocuments    VaultDocument[]
-  folders           Folder[]
-  aiConversations   AiConversation[]
-  notifications     Notification[]
-  auditLogs         AuditLog[]
+  branches         Branch[]
+  documents        CompanyDocument[]
+  userRoles        UserCompanyRole[]
+  employees        Employee[]
+  payrollRuns      PayrollRun[]
+  taxComputations  TaxComputation[]
+  filingDeadlines  FilingDeadline[]
+  complianceStatus ComplianceStatus[]
+  flaggedIssues    FlaggedIssue[]
+  vaultDocuments   VaultDocument[]
+  folders          Folder[]
+  aiConversations  AiConversation[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  firmAssignments  FirmCompanyAssignment[]
+  firmInvitations  FirmClientInvitation[]
 
   @@map("companies")
   @@schema("org")
 }
 
 model Branch {
-  id        String   @id @default(uuid())
-  companyId String   @map("company_id")
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  branchName String  @map("branch_name")
+  id            String  @id @default(uuid())
+  companyId     String  @map("company_id")
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchName    String  @map("branch_name")
   branchAddress String? @map("branch_address")
-  rdoCode   String?  @map("rdo_code")
-  status    String   @default("active")
+  rdoCode       String? @map("rdo_code")
+  status        String  @default("active")
 
   @@index([companyId])
   @@map("branches")
@@ -285,14 +446,14 @@ model Branch {
 }
 
 model CompanyDocument {
-  id           String   @id @default(uuid())
-  companyId    String   @map("company_id")
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  documentType String   @map("document_type") // bir_2303, business_permit, mayors_permit, dti_cert, sec_cert, other
-  documentId   String?  @map("document_id")
+  id            String         @id @default(uuid())
+  companyId     String         @map("company_id")
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documentType  String         @map("document_type") // bir_2303, business_permit, mayors_permit, dti_cert, sec_cert, other
+  documentId    String?        @map("document_id")
   vaultDocument VaultDocument? @relation(fields: [documentId], references: [id])
-  verified     Boolean  @default(false)
-  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+  verified      Boolean        @default(false)
+  uploadedAt    DateTime       @default(now()) @map("uploaded_at")
 
   @@index([companyId])
   @@map("company_documents")
@@ -308,18 +469,18 @@ enum UserCompanyRoleStatus {
 }
 
 model UserCompanyRole {
-  id         String                 @id @default(uuid())
-  userId     String                 @map("user_id")
-  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  companyId  String                 @map("company_id")
-  company    Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  roleId     String                 @map("role_id")
-  role       Role                   @relation(fields: [roleId], references: [id])
+  id          String                @id @default(uuid())
+  userId      String                @map("user_id")
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId   String                @map("company_id")
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roleId      String                @map("role_id")
+  role        Role                  @relation(fields: [roleId], references: [id])
   invitedById String?               @map("invited_by")
-  invitedBy  User?                  @relation("InvitedBy", fields: [invitedById], references: [id])
-  status     UserCompanyRoleStatus  @default(pending)
-  invitedAt  DateTime               @default(now()) @map("invited_at")
-  acceptedAt DateTime?              @map("accepted_at")
+  invitedBy   User?                 @relation("InvitedBy", fields: [invitedById], references: [id])
+  status      UserCompanyRoleStatus @default(pending)
+  invitedAt   DateTime              @default(now()) @map("invited_at")
+  acceptedAt  DateTime?             @map("accepted_at")
 
   @@unique([userId, companyId, roleId])
   @@index([companyId])
@@ -348,21 +509,21 @@ enum PayFrequency {
 }
 
 model Employee {
-  id                String           @id @default(uuid())
-  companyId         String           @map("company_id")
-  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  firstName         String           @map("first_name")
-  lastName          String           @map("last_name")
-  tin               String?
-  sssNumber         String?          @map("sss_number")
-  philhealthNumber  String?          @map("philhealth_number")
-  pagibigNumber     String?          @map("pagibig_number")
-  employmentStatus  EmploymentStatus @default(active) @map("employment_status")
-  dateHired         DateTime?        @map("date_hired")
-  basicSalary       Decimal          @map("basic_salary") @db.Decimal(14, 2)
-  payFrequency      PayFrequency     @default(monthly) @map("pay_frequency")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
+  id               String           @id @default(uuid())
+  companyId        String           @map("company_id")
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  firstName        String           @map("first_name")
+  lastName         String           @map("last_name")
+  tin              String?
+  sssNumber        String?          @map("sss_number")
+  philhealthNumber String?          @map("philhealth_number")
+  pagibigNumber    String?          @map("pagibig_number")
+  employmentStatus EmploymentStatus @default(active) @map("employment_status")
+  dateHired        DateTime?        @map("date_hired")
+  basicSalary      Decimal          @map("basic_salary") @db.Decimal(14, 2)
+  payFrequency     PayFrequency     @default(monthly) @map("pay_frequency")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
   payslips Payslip[]
 
@@ -381,15 +542,15 @@ enum PayrollRunStatus {
 }
 
 model PayrollRun {
-  id           String            @id @default(uuid())
-  companyId    String            @map("company_id")
-  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  periodStart  DateTime          @map("period_start")
-  periodEnd    DateTime          @map("period_end")
-  status       PayrollRunStatus  @default(draft)
-  createdById  String?           @map("created_by")
-  finalizedAt  DateTime?         @map("finalized_at")
-  createdAt    DateTime          @default(now()) @map("created_at")
+  id          String           @id @default(uuid())
+  companyId   String           @map("company_id")
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodStart DateTime         @map("period_start")
+  periodEnd   DateTime         @map("period_end")
+  status      PayrollRunStatus @default(draft)
+  createdById String?          @map("created_by")
+  finalizedAt DateTime?        @map("finalized_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
 
   payslips Payslip[]
 
@@ -428,15 +589,15 @@ model Payslip {
 // ============================================================
 
 model TaxRule {
-  id               String   @id @default(uuid())
-  ruleCode         String   @unique @map("rule_code")
-  description      String?
-  appliesTo        String?  @map("applies_to")
-  sourceReference  String?  @map("source_reference")
-  effectiveFrom    DateTime @map("effective_from")
-  effectiveTo      DateTime? @map("effective_to")
-  createdById      String?  @map("created_by")
-  createdAt        DateTime @default(now()) @map("created_at")
+  id              String    @id @default(uuid())
+  ruleCode        String    @unique @map("rule_code")
+  description     String?
+  appliesTo       String?   @map("applies_to")
+  sourceReference String?   @map("source_reference")
+  effectiveFrom   DateTime  @map("effective_from")
+  effectiveTo     DateTime? @map("effective_to")
+  createdById     String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   ratesHistory TaxRateHistory[]
 
@@ -445,14 +606,14 @@ model TaxRule {
 }
 
 model TaxRateHistory {
-  id             String   @id @default(uuid())
-  ruleId         String   @map("rule_id")
-  rule           TaxRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  rateValue      Decimal  @map("rate_value") @db.Decimal(14, 5)
-  bracketMin     Decimal? @map("bracket_min") @db.Decimal(14, 2)
-  bracketMax     Decimal? @map("bracket_max") @db.Decimal(14, 2)
-  effectiveFrom  DateTime @map("effective_from")
-  effectiveTo    DateTime? @map("effective_to")
+  id            String    @id @default(uuid())
+  ruleId        String    @map("rule_id")
+  rule          TaxRule   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rateValue     Decimal   @map("rate_value") @db.Decimal(14, 5)
+  bracketMin    Decimal?  @map("bracket_min") @db.Decimal(14, 2)
+  bracketMax    Decimal?  @map("bracket_max") @db.Decimal(14, 2)
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
 
   @@index([ruleId])
   @@map("tax_rates_history")
@@ -584,18 +745,18 @@ enum IssueStatus {
 }
 
 model FlaggedIssue {
-  id                  String        @id @default(uuid())
-  companyId           String        @map("company_id")
-  company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  issueType           IssueType     @map("issue_type")
-  severity            IssueSeverity
-  description         String
-  recommendedAction   String?       @map("recommended_action")
-  relatedEntityType   String?       @map("related_entity_type")
-  relatedEntityId     String?       @map("related_entity_id")
-  status              IssueStatus   @default(open)
-  detectedAt          DateTime      @default(now()) @map("detected_at")
-  resolvedAt          DateTime?     @map("resolved_at")
+  id                String        @id @default(uuid())
+  companyId         String        @map("company_id")
+  company           Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  issueType         IssueType     @map("issue_type")
+  severity          IssueSeverity
+  description       String
+  recommendedAction String?       @map("recommended_action")
+  relatedEntityType String?       @map("related_entity_type")
+  relatedEntityId   String?       @map("related_entity_id")
+  status            IssueStatus   @default(open)
+  detectedAt        DateTime      @default(now()) @map("detected_at")
+  resolvedAt        DateTime?     @map("resolved_at")
 
   @@index([companyId, status])
   @@map("flagged_issues")
@@ -607,17 +768,17 @@ model FlaggedIssue {
 // ============================================================
 
 model FormTemplate {
-  id                 String   @id @default(uuid())
-  formCode           String   @unique @map("form_code")
-  agency             Agency
-  title              String
-  description        String?
-  purpose            String?
-  filingFrequency    String?  @map("filing_frequency")
-  defaultDueRule     String?  @map("default_due_rule")
+  id                  String   @id @default(uuid())
+  formCode            String   @unique @map("form_code")
+  agency              Agency
+  title               String
+  description         String?
+  purpose             String?
+  filingFrequency     String?  @map("filing_frequency")
+  defaultDueRule      String?  @map("default_due_rule")
   requiredAttachments String[] @map("required_attachments")
-  fileUrl            String?  @map("file_url")
-  version            String?
+  fileUrl             String?  @map("file_url")
+  version             String?
 
   @@map("form_templates")
   @@schema("forms")
@@ -644,19 +805,19 @@ model Folder {
 }
 
 model VaultDocument {
-  id               String              @id @default(uuid())
-  companyId        String              @map("company_id")
-  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  folderId         String?             @map("folder_id")
-  folder           Folder?             @relation(fields: [folderId], references: [id])
+  id               String   @id @default(uuid())
+  companyId        String   @map("company_id")
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folderId         String?  @map("folder_id")
+  folder           Folder?  @relation(fields: [folderId], references: [id])
   category         String
-  fileName         String              @map("file_name")
-  storageKey       String              @map("storage_key")
-  mimeType         String?             @map("mime_type")
-  sizeBytes        BigInt?             @map("size_bytes")
-  uploadedById     String?             @map("uploaded_by")
-  currentVersionId String?             @map("current_version_id")
-  createdAt        DateTime            @default(now()) @map("created_at")
+  fileName         String   @map("file_name")
+  storageKey       String   @map("storage_key")
+  mimeType         String?  @map("mime_type")
+  sizeBytes        BigInt?  @map("size_bytes")
+  uploadedById     String?  @map("uploaded_by")
+  currentVersionId String?  @map("current_version_id")
+  createdAt        DateTime @default(now()) @map("created_at")
 
   versions         DocumentVersion[]
   companyDocuments CompanyDocument[]
@@ -716,14 +877,14 @@ enum ConfidenceFlag {
 }
 
 model AiMessage {
-  id               String         @id @default(uuid())
-  conversationId   String         @map("conversation_id")
-  conversation     AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  id               String          @id @default(uuid())
+  conversationId   String          @map("conversation_id")
+  conversation     AiConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender           MessageSender
   content          String
-  retrievedSources Json?          @map("retrieved_sources")
+  retrievedSources Json?           @map("retrieved_sources")
   confidenceFlag   ConfidenceFlag? @map("confidence_flag")
-  createdAt        DateTime       @default(now()) @map("created_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
 
   @@index([conversationId])
   @@map("ai_messages")
@@ -773,12 +934,12 @@ model Notification {
 }
 
 model NotificationPreference {
-  id        String  @id @default(uuid())
-  userId    String  @map("user_id")
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String              @id @default(uuid())
+  userId    String              @map("user_id")
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   channel   NotificationChannel
   category  String
-  isEnabled Boolean @default(true) @map("is_enabled")
+  isEnabled Boolean             @default(true) @map("is_enabled")
 
   @@unique([userId, channel, category])
   @@map("notification_preferences")
@@ -790,18 +951,18 @@ model NotificationPreference {
 // ============================================================
 
 model AuditLog {
-  id           String   @id @default(uuid())
-  companyId    String?  @map("company_id")
-  company      Company? @relation(fields: [companyId], references: [id])
-  actorUserId  String?  @map("actor_user_id")
-  actorUser    User?    @relation(fields: [actorUserId], references: [id])
-  action       String
-  entityType   String?  @map("entity_type")
-  entityId     String?  @map("entity_id")
-  beforeState  Json?    @map("before_state")
-  afterState   Json?    @map("after_state")
-  ipAddress    String?  @map("ip_address")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  companyId   String?  @map("company_id")
+  company     Company? @relation(fields: [companyId], references: [id])
+  actorUserId String?  @map("actor_user_id")
+  actorUser   User?    @relation(fields: [actorUserId], references: [id])
+  action      String
+  entityType  String?  @map("entity_type")
+  entityId    String?  @map("entity_id")
+  beforeState Json?    @map("before_state")
+  afterState  Json?    @map("after_state")
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([companyId, createdAt])
   @@map("audit_logs")
