@@ -1,5 +1,5 @@
 # ---- Base ----
-FROM node:20-alpine AS base
+FROM node:26-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache openssl
 
@@ -25,7 +25,7 @@ RUN npm ci --omit=dev
 RUN npx prisma generate
 
 # ---- Runtime ----
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 RUN apk add --no-cache openssl dumb-init \
   && addgroup -S pinoytax && adduser -S pinoytax -G pinoytax
