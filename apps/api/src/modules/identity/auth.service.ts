@@ -84,7 +84,12 @@ export class AuthService {
       },
     });
 
-    await this.mailerService.sendVerificationEmail(email, rawToken);
+    // Not awaited deliberately: MailerService.send() already catches every
+    // failure internally and never rejects, so this can't produce an
+    // unhandled rejection — and callers of issueEmailVerification()
+    // (registration, resend) must not block the HTTP response on SMTP
+    // latency (see the timeout comment in MailerService's constructor).
+    void this.mailerService.sendVerificationEmail(email, rawToken);
   }
 
   async verifyEmail(dto: VerifyEmailDto): Promise<void> {
@@ -191,7 +196,7 @@ export class AuthService {
       await this.prisma.securityEvent.create({
         data: { userId, eventType: 'account_locked', details: { lockedUntil } },
       });
-      await this.mailerService.sendAccountLockedAlert(user.email);
+      void this.mailerService.sendAccountLockedAlert(user.email);
     }
   }
 
@@ -326,7 +331,7 @@ export class AuthService {
       },
     });
 
-    await this.mailerService.sendPasswordResetEmail(user.email, rawToken);
+    void this.mailerService.sendPasswordResetEmail(user.email, rawToken);
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {

@@ -15,6 +15,16 @@ export class MailerService {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      // Without these, nodemailer falls back to Node's default socket
+      // timeout (multiple minutes) when the SMTP host is slow, unreachable,
+      // or filtered — and every call site here fires the send without
+      // awaiting it specifically because that would otherwise block
+      // registration/login/password-reset for that same multi-minute
+      // window. Bound it explicitly so an SMTP outage degrades to "the
+      // email is just late" instead of "the API stalls."
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
     });
   }
 
