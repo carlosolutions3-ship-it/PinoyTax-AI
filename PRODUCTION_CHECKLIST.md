@@ -27,7 +27,7 @@ Work through this in order before deploying to a real production environment. As
 ## 2. Database
 
 - [ ] Managed Postgres 15+ provisioned, with automated backups and point-in-time recovery enabled
-- [ ] Confirmed backup restore has been tested at least once (a backup that's never been restored is not a verified backup)
+- [ ] Confirmed backup restore has been tested at least once (a backup that's never been restored is not a verified backup) — see `BACKUP_RESTORE.md` for the runbook and rehearsal checklist
 - [ ] Migrations applied via `prisma migrate deploy` (not `migrate dev`)
 - [ ] Confirmed the `pinoytax_app` role exists and has the expected grants (full CRUD on all schemas except `audit.audit_logs`/`audit.security_events`, which are INSERT+SELECT only) — verify with `\dp audit.audit_logs` in `psql`
 - [ ] Confirmed `pinoytax_app` does NOT have `BYPASSRLS` or superuser

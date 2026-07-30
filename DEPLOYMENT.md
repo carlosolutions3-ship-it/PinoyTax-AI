@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This document covers deploying PinoyTax AI to a production environment. For local development setup, see `INSTALL.md`.
+This document covers deploying PinoyTax AI to a production environment. For local development setup, see `INSTALL.md`. For backing up and restoring the database and document vault, see `BACKUP_RESTORE.md`.
 
 ## 1. Architecture recap
 
