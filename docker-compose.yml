@@ -85,6 +85,10 @@ services:
       DATABASE_URL: postgresql://pinoytax:pinoytax_dev_password@postgres:5432/pinoytax_ai?schema=public
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://pinoytax:pinoytax_dev_password@rabbitmq:5672
+      # The worker never listens on HTTP — see Dockerfile's HEALTHCHECK
+      # comment. Without this, `docker ps` reports it "unhealthy" forever
+      # despite running correctly.
+      WORKER_PROCESS: "true"
 
   web:
     build:
