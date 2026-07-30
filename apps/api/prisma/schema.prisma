@@ -1,6 +1,16 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["multiSchema"]
+  // "native" covers local dev on any host OS; "linux-musl-openssl-3.0.x"
+  // is the runtime target for the production Docker image (Alpine 3.x,
+  // OpenSSL 3 — see apps/api/Dockerfile). Pinned explicitly rather than
+  // relying on Prisma's own runtime auto-detection: that detection shells
+  // out to the `openssl` CLI, and building without it present (verified
+  // against a real `docker build` — see DEPLOYMENT.md) makes detection
+  // silently fall back to the wrong (openssl-1.1.x) engine binary, which
+  // then fails to load at container boot with a confusing native-binding
+  // error instead of a clear one at build time.
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
