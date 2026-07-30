@@ -29,7 +29,11 @@ The seeded default role permissions are deliberately conservative — a `busines
 - **Global full-text search across companies/records does not exist.** Filtering and pagination are implemented per-page (Documents, Payroll, Tax, Notifications, Forms) over already-loaded data; there is no cross-entity search bar.
 - **No dark mode toggle**, despite the design tokens (`darkMode: 'class'` in `tailwind.config.js`) being dark-mode-ready. Wiring an actual toggle and auditing every page against it was out of scope for v1.0.
 - **Placeholder brand assets.** The logo, favicon, and illustrations (`apps/web/src/components/brand/`) are original but placeholder-quality flat-vector work, not a commissioned brand identity — by explicit design direction for v1.0, swap them when a real identity is commissioned.
-- **No end-to-end (browser automation) test suite committed to the repo.** Verification for this release relied on manual Playwright-driven walkthroughs run during development, not a checked-in, CI-runnable E2E suite.
+- **The E2E suite (`e2e/`) is not wired into CI yet** — it runs against a live Postgres/Redis/API/web stack rather than the ephemeral service containers the GitHub Actions workflow provisions for `npm test`, so it's currently a local/pre-release check (`npm run test:e2e`, see `e2e/README.md`) rather than a required check on every PR.
+
+## Performance
+
+- **Payroll computation does a per-employee tax-rule lookup.** `PayrollService.computePayroll` queries `tax_engine.tax_rules` up to 4 times per employee (SSS, PhilHealth, Pag-IBIG, withholding tax) via `TaxEngineService`, even though 3 of those 4 rules are identical for every employee in the same run (same `periodEnd`). This was deliberately left as-is rather than caching the rate in `PayrollService` and duplicating the `base × rate` arithmetic outside `TaxEngineService` — for a tax-compliance app, having a single source of truth for tax math outweighs the performance win at realistic (tens-to-low-hundreds) employee counts. If payroll runs become a measured bottleneck, prefer adding a batch-lookup method to `TaxEngineService` itself (so the math stays in one place) over caching in the caller.
 
 ## Infrastructure
 
