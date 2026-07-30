@@ -1,21 +1,23 @@
 # Changelog
 
-Format loosely follows [Keep a Changelog](https://keepachangelog.com/). This project has not yet had a numbered release cut for the frontend; the backend is at release-candidate v0.1.0 (see `RELEASE.md`).
+Format loosely follows [Keep a Changelog](https://keepachangelog.com/). See `RELEASE.md` for the current recommended version number and go/no-go status.
 
 ## [Unreleased]
 
 ### Still to build
-- Frontend pages: payroll (employees, payroll runs, compute/finalize UI), tax computations (compute/list/confirm UI), documents (folders, upload, versions, download UI), AI Assistant chat UI, company settings (staff invite, company edit, notification preferences UI)
-- Dockerfile for `apps/web`, and re-enabling the `web` service in `docker-compose.yml` once it exists
-- Automated test suites: unit tests (especially `TaxEngineService`'s bracket/flat-rate math), integration tests (Testcontainers against real Postgres), e2e tests (Playwright)
-- CI/CD pipeline (GitHub Actions): lint, type-check, test, build, security scan
-- Dependency vulnerability scanning (`npm audit` / Snyk / Dependabot)
-- Field-level encryption for TIN and government ID numbers
-- Wiring Row-Level Security to an actual live per-request control (currently infrastructure-in-place only — see `SECURITY.md`)
-- Firm-level multi-client CRUD endpoints (schema exists, no controller yet)
-- Branch and company-document-linking CRUD endpoints (schema exists, no controller yet)
-- Billing/subscription management (not in original scope, flagged as a pre-launch gap)
-- A penetration test before handling real production financial data
+Everything the frontend was originally missing (payroll, tax, documents, AI assistant, settings, admin, reports, forms, notifications, profile pages), the web Dockerfile, CI/CD, and an initial E2E/unit test suite have all since been built — see "Added" below. What's genuinely still open:
+- **Tax rate accuracy**: several seeded tax rates (`apps/api/prisma/seed.ts`) are explicitly marked `SCAFFOLD VALUE, VERIFY BEFORE USE` — flat approximations (e.g. EWT, SSS) standing in for the real bracketed government tables. This is the single highest-priority item before handling a real customer's numbers; see `PRODUCTION_CHECKLIST.md` and `KNOWN_LIMITATIONS.md`.
+- Wiring the E2E suite (`e2e/`) into CI — it runs locally today but isn't yet a required check on `main`/PRs.
+- Field-level encryption for TIN and government ID numbers.
+- Wiring Row-Level Security to an actual live per-request control (currently infrastructure-in-place only, application-layer `companyId` scoping is the real current boundary — see `SECURITY.md`).
+- Firm-level multi-client CRUD endpoints (schema exists, no controller yet).
+- Branch and company-document-linking CRUD endpoints beyond what's already built (schema exists for the rest, no controller yet).
+- Billing/subscription management (not in original scope, flagged as a pre-launch gap).
+- A distributed lock for the deadline-reminder cron if the worker is ever scaled beyond one replica (safe today at one replica — see `NotificationsSchedulingModule`'s doc comment).
+- A penetration test before handling real production financial data.
+
+### Added since the backend-only snapshot below
+Full frontend build-out (all pages: payroll, tax, documents, AI assistant, company settings/branches/roles, reports, admin, forms library, notifications, profile), a shared component library and premium visual redesign, GitHub Actions CI (lint/build/test on every push/PR), a Playwright E2E suite covering the core user journeys, Dependabot, structured-logging correlation IDs and process-crash handlers, a database backup/restore runbook, an accessibility and performance pass, and a full pre-launch release audit (RBAC/tenant-isolation review, N+1 fixes, validation gaps, dead code removal, Docker build reproducibility). See git history for the detailed commit-by-commit record — this file tracks the high-level backend milestones below as originally written.
 
 ### Added
 - **Identity & Access**: registration, email verification, login/logout with rotating opaque refresh tokens, account lockout, session/device history, forgot/reset password

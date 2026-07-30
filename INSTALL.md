@@ -94,4 +94,9 @@ If any step fails, check:
 
 ## 8. Running tests
 
-Test suites (unit, integration, e2e) are called out in `apps/api/package.json` scripts (`npm test`, `npm run test:e2e`) but the actual test files have not yet been written in this repository — see `CHANGELOG.md` for status. Contributions adding test coverage are very welcome; see `CONTRIBUTING.md`.
+```bash
+npm test --workspace=apps/api          # unit tests (Jest) — 79 tests across 8 suites
+npm run test:e2e                        # end-to-end (Playwright) — see e2e/README.md for prerequisites
+```
+
+`apps/web` has no unit-test script; its correctness is covered by `next lint`, `tsc --noEmit`, and the Playwright suite above, which exercises it against a real running API. CI (`.github/workflows/ci.yml`) runs the API unit tests, and both apps' builds and lint, on every push/PR to `main` — the E2E suite currently runs locally only (see `KNOWN_LIMITATIONS.md`). Contributions adding test coverage are very welcome; see `CONTRIBUTING.md`.
