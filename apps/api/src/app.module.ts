@@ -11,6 +11,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { JwtAuthGuard } from './modules/identity/guards/jwt-auth.guard';
 import { OrgModule } from './modules/org/org.module';
+import { FirmModule } from './modules/firm/firm.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
 import { TaxEngineModule } from './modules/tax-engine/tax-engine.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
@@ -41,6 +42,7 @@ import { AppLoggerModule } from './logging/logger.module';
     AuditModule,
     IdentityModule,
     OrgModule,
+    FirmModule,
     PayrollModule,
     TaxEngineModule,
     ComplianceModule,

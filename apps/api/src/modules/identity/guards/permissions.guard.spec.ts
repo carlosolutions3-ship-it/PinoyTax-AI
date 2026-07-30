@@ -6,16 +6,21 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 /**
  * PermissionsGuard is the SOLE enforcement point for company-scoped tenant
  * isolation across every controller in this app — every route that takes
- * :companyId relies on it to confirm the caller actually holds an active
- * role on that exact company. A bug here (e.g. the status filter silently
- * dropped, or "any" permission instead of "all" required) would be a
- * cross-tenant access hole, not just a wrong-response bug, so these tests
- * pin down the exact query shape and boolean logic, not just outcomes.
+ * :companyId relies on it to confirm the caller actually holds access to
+ * that exact company, from either a direct company role OR a firm-granted
+ * assignment. A bug here (e.g. a status filter silently dropped, "any"
+ * permission instead of "all" required, or the two sources cross-leaking
+ * into each other's company) would be a cross-tenant access hole, not just
+ * a wrong-response bug, so these tests pin down the exact query shape and
+ * boolean logic, not just outcomes.
  */
 describe('PermissionsGuard', () => {
   let guard: PermissionsGuard;
   let reflector: { getAllAndOverride: jest.Mock };
-  let prisma: { userCompanyRole: { findFirst: jest.Mock } };
+  let prisma: {
+    userCompanyRole: { findFirst: jest.Mock };
+    firmCompanyAssignment: { findFirst: jest.Mock };
+  };
 
   function contextWith(request: Record<string, unknown>): ExecutionContext {
     return {
@@ -32,9 +37,19 @@ describe('PermissionsGuard', () => {
     };
   }
 
+  function assignmentWithPermissions(codes: string[]) {
+    return {
+      id: 'fca-1',
+      permissions: codes.map((code) => ({ permission: { code } })),
+    };
+  }
+
   beforeEach(() => {
     reflector = { getAllAndOverride: jest.fn() };
-    prisma = { userCompanyRole: { findFirst: jest.fn() } };
+    prisma = {
+      userCompanyRole: { findFirst: jest.fn().mockResolvedValue(null) },
+      firmCompanyAssignment: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
     guard = new PermissionsGuard(reflector as unknown as Reflector, prisma as unknown as PrismaService);
   });
 
@@ -44,6 +59,7 @@ describe('PermissionsGuard', () => {
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(prisma.userCompanyRole.findFirst).not.toHaveBeenCalled();
+    expect(prisma.firmCompanyAssignment.findFirst).not.toHaveBeenCalled();
   });
 
   it('also treats an empty permissions array as "no restriction"', async () => {
@@ -69,15 +85,14 @@ describe('PermissionsGuard', () => {
     expect(prisma.userCompanyRole.findFirst).not.toHaveBeenCalled();
   });
 
-  it('rejects when the caller has no active role on the target company', async () => {
+  it('rejects when the caller has neither a direct role nor a firm assignment on the target company', async () => {
     reflector.getAllAndOverride.mockReturnValue(['company:read']);
-    prisma.userCompanyRole.findFirst.mockResolvedValue(null);
     const ctx = contextWith({ user: { id: 'u1' }, params: { companyId: 'c1' } });
 
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('scopes the lookup to the exact caller, exact company, and active status only', async () => {
+  it('scopes the direct-role lookup to the exact caller, exact company, and active status only', async () => {
     reflector.getAllAndOverride.mockReturnValue(['company:read']);
     prisma.userCompanyRole.findFirst.mockResolvedValue(roleWithPermissions(['company:read']));
     const ctx = contextWith({ user: { id: 'u1' }, params: { companyId: 'c1' } });
@@ -89,6 +104,24 @@ describe('PermissionsGuard', () => {
     );
   });
 
+  it('scopes the firm-assignment lookup to an active assignment on this company through an active firm membership for this exact user', async () => {
+    reflector.getAllAndOverride.mockReturnValue(['company:read']);
+    prisma.firmCompanyAssignment.findFirst.mockResolvedValue(assignmentWithPermissions(['company:read']));
+    const ctx = contextWith({ user: { id: 'u1' }, params: { companyId: 'c1' } });
+
+    await guard.canActivate(ctx);
+
+    expect(prisma.firmCompanyAssignment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          companyId: 'c1',
+          status: 'active',
+          firmMembership: { userId: 'u1', status: 'active' },
+        },
+      }),
+    );
+  });
+
   it('rejects when the role is missing even one of several required permissions', async () => {
     reflector.getAllAndOverride.mockReturnValue(['payroll:read', 'payroll:write']);
     prisma.userCompanyRole.findFirst.mockResolvedValue(roleWithPermissions(['payroll:read']));
@@ -97,7 +130,7 @@ describe('PermissionsGuard', () => {
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('allows through and attaches the resolved role when every required permission is granted', async () => {
+  it('allows through and attaches the resolved role when every required permission is granted directly', async () => {
     reflector.getAllAndOverride.mockReturnValue(['payroll:read', 'payroll:write']);
     const role = roleWithPermissions(['payroll:read', 'payroll:write', 'payroll:finalize']);
     prisma.userCompanyRole.findFirst.mockResolvedValue(role);
@@ -108,18 +141,49 @@ describe('PermissionsGuard', () => {
     expect((request as Record<string, unknown>).userCompanyRole).toBe(role);
   });
 
+  it('allows through on a firm-granted assignment alone, with no direct company role', async () => {
+    reflector.getAllAndOverride.mockReturnValue(['payroll:read']);
+    const assignment = assignmentWithPermissions(['payroll:read']);
+    prisma.firmCompanyAssignment.findFirst.mockResolvedValue(assignment);
+    const request = { user: { id: 'u1' }, params: { companyId: 'c1' } };
+    const ctx = contextWith(request);
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect((request as Record<string, unknown>).firmCompanyAssignment).toBe(assignment);
+    expect((request as Record<string, unknown>).userCompanyRole).toBeNull();
+  });
+
+  it('unions permissions across both sources — one grants half, the other grants the rest', async () => {
+    reflector.getAllAndOverride.mockReturnValue(['payroll:read', 'tax:compute']);
+    prisma.userCompanyRole.findFirst.mockResolvedValue(roleWithPermissions(['payroll:read']));
+    prisma.firmCompanyAssignment.findFirst.mockResolvedValue(assignmentWithPermissions(['tax:compute']));
+    const ctx = contextWith({ user: { id: 'u1' }, params: { companyId: 'c1' } });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  it('rejects when neither source alone nor their union satisfies every required permission', async () => {
+    reflector.getAllAndOverride.mockReturnValue(['payroll:read', 'payroll:finalize']);
+    prisma.userCompanyRole.findFirst.mockResolvedValue(roleWithPermissions(['payroll:read']));
+    prisma.firmCompanyAssignment.findFirst.mockResolvedValue(assignmentWithPermissions(['tax:compute']));
+    const ctx = contextWith({ user: { id: 'u1' }, params: { companyId: 'c1' } });
+
+    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('never grants access to a different company than the one in the route', async () => {
-    // A caller who has a role on company A must not pass a request for
-    // company B just because prisma was (hypothetically) queried without
-    // the companyId filter — assert the filter is always present and
-    // scoped to the route's own companyId, not any company the user
-    // happens to belong to.
+    // A caller who has a role or assignment on company A must not pass a
+    // request for company B just because prisma was (hypothetically)
+    // queried without the companyId filter — assert the filter is always
+    // present and scoped to the route's own companyId.
     reflector.getAllAndOverride.mockReturnValue(['company:read']);
-    prisma.userCompanyRole.findFirst.mockResolvedValue(null);
     const ctx = contextWith({ user: { id: 'u1' }, params: { companyId: 'company-b' } });
 
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.userCompanyRole.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ companyId: 'company-b' }) }),
+    );
+    expect(prisma.firmCompanyAssignment.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ companyId: 'company-b' }) }),
     );
   });

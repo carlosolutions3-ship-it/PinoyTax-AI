@@ -9,9 +9,18 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../../../common/decorators/require-permissions.decorator';
 
 /**
- * Checks that the authenticated user holds an ACTIVE role on the company
- * identified by the route's `:companyId` param, and that role grants every
+ * Checks that the authenticated user has access to the company identified
+ * by the route's `:companyId` param, and that access grants every
  * permission listed via @RequirePermissions(...) on the handler.
+ *
+ * Access can come from either of two independent sources, unioned together:
+ *  1. A direct, ACTIVE org.user_company_roles grant (company-level RBAC —
+ *     unchanged from before firm support existed).
+ *  2. An ACTIVE org.firm_company_assignments grant, reached through an
+ *     ACTIVE org.firm_memberships row for this user (firm-level RBAC — a
+ *     firm staffer never needs a direct company role to work a client).
+ * Both sources speak the same identity.permissions vocabulary, so a route
+ * doesn't need to know or care which source satisfied it.
  *
  * This guard is route-level defense; any service method that mutates
  * financial/compliance data re-checks permissions itself (see Phase 1 §5.3 —
@@ -45,21 +54,35 @@ export class PermissionsGuard implements CanActivate {
       });
     }
 
-    const userCompanyRole = await this.prisma.userCompanyRole.findFirst({
-      where: { userId: user.id, companyId, status: 'active' },
-      include: { role: { include: { permissions: { include: { permission: true } } } } },
-    });
+    const [userCompanyRole, firmCompanyAssignment] = await Promise.all([
+      this.prisma.userCompanyRole.findFirst({
+        where: { userId: user.id, companyId, status: 'active' },
+        include: { role: { include: { permissions: { include: { permission: true } } } } },
+      }),
+      this.prisma.firmCompanyAssignment.findFirst({
+        where: {
+          companyId,
+          status: 'active',
+          firmMembership: { userId: user.id, status: 'active' },
+        },
+        include: { permissions: { include: { permission: true } } },
+      }),
+    ]);
 
-    if (!userCompanyRole) {
+    if (!userCompanyRole && !firmCompanyAssignment) {
       throw new ForbiddenException({
         code: 'FORBIDDEN',
         message: 'You do not have access to this company.',
       });
     }
 
-    const grantedCodes = new Set(
-      userCompanyRole.role.permissions.map((rp) => rp.permission.code),
-    );
+    const grantedCodes = new Set<string>();
+    for (const rp of userCompanyRole?.role.permissions ?? []) {
+      grantedCodes.add(rp.permission.code);
+    }
+    for (const ap of firmCompanyAssignment?.permissions ?? []) {
+      grantedCodes.add(ap.permission.code);
+    }
     const hasAll = requiredPermissions.every((code) => grantedCodes.has(code));
 
     if (!hasAll) {
@@ -71,6 +94,7 @@ export class PermissionsGuard implements CanActivate {
 
     // Attach for downstream handlers/services that want it without re-querying.
     request.userCompanyRole = userCompanyRole;
+    request.firmCompanyAssignment = firmCompanyAssignment;
     return true;
   }
 }
