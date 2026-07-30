@@ -10,3 +10,9 @@ out/
 coverage/
 .DS_Store
 *.tsbuildinfo
+dump.rdb
+
+# Playwright E2E (see e2e/README.md)
+test-results/
+playwright-report/
+blob-report/
