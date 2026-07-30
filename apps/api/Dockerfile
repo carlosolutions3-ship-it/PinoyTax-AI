@@ -32,10 +32,10 @@ RUN apk add --no-cache openssl dumb-init \
 
 ENV NODE_ENV=production
 
-COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
-COPY package*.json ./
+COPY --from=prod-deps --chown=pinoytax:pinoytax /app/node_modules ./node_modules
+COPY --from=build --chown=pinoytax:pinoytax /app/dist ./dist
+COPY --from=build --chown=pinoytax:pinoytax /app/prisma ./prisma
+COPY --chown=pinoytax:pinoytax package*.json ./
 
 USER pinoytax
 
