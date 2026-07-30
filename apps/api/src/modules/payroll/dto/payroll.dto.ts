@@ -1,4 +1,5 @@
 import { IsDateString, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsSameOrAfterDate } from '../../../common/validators/is-same-or-after-date.decorator';
 
 export class CreateEmployeeDto {
   @IsString()
@@ -39,5 +40,6 @@ export class CreatePayrollRunDto {
   periodStart!: string;
 
   @IsDateString()
+  @IsSameOrAfterDate('periodStart', { message: 'periodEnd must be on or after periodStart' })
   periodEnd!: string;
 }

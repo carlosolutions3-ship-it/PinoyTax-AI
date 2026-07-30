@@ -1,4 +1,5 @@
 import { IsDateString, IsEnum, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsSameOrAfterDate } from '../../../common/validators/is-same-or-after-date.decorator';
 
 export enum ComputationTypeDto {
   income_tax = 'income_tax',
@@ -16,6 +17,7 @@ export class ComputeTaxDto {
   periodStart!: string;
 
   @IsDateString()
+  @IsSameOrAfterDate('periodStart', { message: 'periodEnd must be on or after periodStart' })
   periodEnd!: string;
 
   @IsOptional()

@@ -28,6 +28,7 @@ export class PayrollController {
 
   @Post('payroll-runs')
   @RequirePermissions('payroll:write')
+  @Audit({ action: 'payroll_run.create', entityType: 'payroll_run' })
   async createPayrollRun(
     @Param('companyId') companyId: string,
     @Body() dto: CreatePayrollRunDto,
@@ -50,6 +51,7 @@ export class PayrollController {
 
   @Post('payroll-runs/:runId/compute')
   @RequirePermissions('payroll:write')
+  @Audit({ action: 'payroll_run.compute', entityType: 'payroll_run' })
   async computePayrollRun(@Param('companyId') companyId: string, @Param('runId') runId: string) {
     return this.payrollService.computePayrollRun(companyId, runId);
   }

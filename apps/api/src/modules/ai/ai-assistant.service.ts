@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -30,6 +30,7 @@ interface ChatResult {
 
 @Injectable()
 export class AiAssistantService {
+  private readonly logger = new Logger(AiAssistantService.name);
   private readonly anthropic: Anthropic;
 
   constructor(
@@ -116,12 +117,27 @@ export class AiAssistantService {
       content: m.content,
     }));
 
-    const response = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      system: `${SYSTEM_PROMPT}\n\nRETRIEVED SOURCES:\n${sourcesBlock}`,
-      messages: [...history, { role: 'user', content: userContent }],
-    });
+    let response;
+    try {
+      response = await this.anthropic.messages.create({
+        model: 'claude-sonnet-5',
+        max_tokens: 1024,
+        system: `${SYSTEM_PROMPT}\n\nRETRIEVED SOURCES:\n${sourcesBlock}`,
+        messages: [...history, { role: 'user', content: userContent }],
+      });
+    } catch (err) {
+      // A transient Anthropic-side failure (rate limit, timeout, outage)
+      // must not leave the conversation in a broken half-written state —
+      // the user's own message is already persisted by sendMessage's
+      // caller, but no assistant reply or lastMessageAt update happens
+      // past this point, and the frontend's existing ApiError handling
+      // surfaces a clean, retryable message instead of a raw 500.
+      this.logger.error(`Anthropic API call failed: ${(err as Error).message}`, (err as Error).stack);
+      throw new ServiceUnavailableException({
+        code: 'AI_ASSISTANT_UNAVAILABLE',
+        message: 'The AI assistant is temporarily unavailable. Please try again in a moment.',
+      });
+    }
 
     const textBlock = response.content.find((block) => block.type === 'text');
     const content = textBlock && 'text' in textBlock ? textBlock.text : '';
