@@ -46,3 +46,31 @@ See `KNOWN_LIMITATIONS.md` for the full, current list. Highlights: seeded tax ra
 ### Upgrade notes
 
 N/A for this release — v1.0.0 is the first general-availability build. Future releases will document schema migration order and any breaking API/config changes here.
+
+---
+
+## v1.1.0 — Full pre-launch release audit
+
+A complete audit of every module, page, endpoint, permission, background job, environment variable, Docker file, GitHub workflow, and document — assuming real paying customers deploy tomorrow — followed by fixing everything found. No breaking API or schema changes; this is a hardening release.
+
+### Fixed
+- **AI Assistant was completely broken**: `ai-assistant.service.ts` called a non-existent Anthropic model id (`claude-sonnet-4-6`) — every request would have failed in production. Fixed to a real model id, and wrapped the call so a transient upstream failure returns a clean, retryable error instead of leaving a conversation half-written.
+- **Silent daily reminder failures**: the filing-deadline reminder cron had no error isolation — one bad row could silently skip every company's reminder for the day with no retry. Now isolated per reminder window and per recipient (and batched to remove an N+1 query).
+- **Missing validation**: payroll runs and tax computations could be created with an inverted period (end before start) — added cross-field validation, both server- and client-side.
+- **Audit trail gap**: creating and computing a payroll run (real payslip numbers for every employee) wasn't audit-logged — only the final "finalize" step was.
+- **Ungraceful 500s**: an admin endpoint's `?take=` query param produced an unhandled 500 on non-numeric input instead of a clean 400.
+- **Reports page data loss**: a `Promise.all` across payroll/tax/compliance fetches meant one expected 403 (a role without tax access) blanked out payroll and compliance data the user *did* have access to — switched to `Promise.allSettled`.
+- **Tax page offered a doomed-to-fail form**: a role without tax access saw a fully interactive "New computation" form that would always 403 on submit — now shows one clear message instead.
+- **Reports page loading flash**: empty-state text and a "Loading…" line rendered simultaneously on every load — now uses the same skeleton pattern as every sibling page.
+- **Accessibility**: unlabeled filter dropdowns on three pages now have accessible names.
+- **Mobile overflow**: a fixed-width admin input and two un-scrollable admin tables now behave correctly below 400px.
+- **Non-reproducible Docker builds**: both Dockerfiles ran `npm install` with no lockfile in their build context — any image build could resolve different transitive dependency versions. Now `npm ci` against a real, committed, verified lockfile.
+- **Dead/broken tooling**: removed a `test:e2e` script in `apps/api/package.json` pointing at a nonexistent Jest config; the real E2E suite is the root `npm run test:e2e` (Playwright).
+- **Stale/inaccurate documentation**: `INSTALL.md` claimed no tests exist (79 do); `CHANGELOG.md`'s "still to build" list named things already shipped. Both corrected; added a missing root `README.md`.
+
+### Added
+- A GitHub Actions `e2e` job: seeds the database, builds and boots both apps in production mode, and runs the full Playwright suite on every push/PR — previously local-only.
+- Failed-job visibility: BullMQ processors now log at error level when a job exhausts all retries, distinct from a mid-retry warning.
+
+### Still open (see `KNOWN_LIMITATIONS.md` and `PRODUCTION_CHECKLIST.md`)
+Unverified/scaffold tax rates are the top remaining item before this product can be trusted with a real customer's numbers — this requires a Philippine tax accountant's sign-off, not an engineering fix, and this audit deliberately did not invent replacement figures. RLS-as-a-live-control, field-level PII encryption, and a pre-launch penetration test remain open, all already tracked pre-audit.
