@@ -91,13 +91,13 @@ describe('PayrollService', () => {
 
     it('computes a fully-resolved payslip with netPay reconciling to grossPay minus deductions', async () => {
       prisma.employee.findMany.mockResolvedValue([baseEmployee]);
-      taxEngine.computeFlatRateAmount.mockImplementation((ruleCode: string) => {
+      taxEngine.computeGraduatedAmount.mockImplementation((ruleCode: string) => {
         if (ruleCode === 'SSS_EMPLOYEE_CONTRIBUTION_RATE') return Promise.resolve(flatResult(1350));
         if (ruleCode === 'PHILHEALTH_EMPLOYEE_CONTRIBUTION_RATE') return Promise.resolve(flatResult(750));
         if (ruleCode === 'PAGIBIG_EMPLOYEE_CONTRIBUTION_RATE') return Promise.resolve(flatResult(200));
+        if (ruleCode === 'WITHHOLDING_COMP_BRACKETS') return Promise.resolve(flatResult(500));
         throw new Error(`unexpected rule ${ruleCode}`);
       });
-      taxEngine.computeGraduatedAmount.mockResolvedValue(flatResult(500));
 
       const [payslip] = await service.computePayrollRun(COMPANY_ID, RUN_ID);
 
@@ -114,8 +114,7 @@ describe('PayrollService', () => {
     it('never defaults a missing statutory number to a silent zero — it records an explicit error instead', async () => {
       const employeeMissingSss = { ...baseEmployee, sssNumber: null };
       prisma.employee.findMany.mockResolvedValue([employeeMissingSss]);
-      taxEngine.computeFlatRateAmount.mockResolvedValue(flatResult(750));
-      taxEngine.computeGraduatedAmount.mockResolvedValue(flatResult(500));
+      taxEngine.computeGraduatedAmount.mockResolvedValue(flatResult(750));
 
       const [payslip] = await service.computePayrollRun(COMPANY_ID, RUN_ID);
 
@@ -127,11 +126,10 @@ describe('PayrollService', () => {
 
     it('records an error (not a silent zero) when a required tax rule is not configured', async () => {
       prisma.employee.findMany.mockResolvedValue([baseEmployee]);
-      taxEngine.computeFlatRateAmount.mockImplementation((ruleCode: string) => {
+      taxEngine.computeGraduatedAmount.mockImplementation((ruleCode: string) => {
         if (ruleCode === 'SSS_EMPLOYEE_CONTRIBUTION_RATE') return Promise.resolve(missingRule(ruleCode));
         return Promise.resolve(flatResult(100));
       });
-      taxEngine.computeGraduatedAmount.mockResolvedValue(flatResult(500));
 
       const [payslip] = await service.computePayrollRun(COMPANY_ID, RUN_ID);
 

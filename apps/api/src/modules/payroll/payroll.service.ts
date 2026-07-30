@@ -100,11 +100,16 @@ export class PayrollService {
       const basicPay = Number(employee.basicSalary);
       const errors: string[] = [];
 
+      // SSS/PhilHealth/Pag-IBIG are each seeded as a two-bracket graduated
+      // rule (real rate up to the official salary ceiling, 0% beyond it) so
+      // the contribution correctly caps instead of growing linearly past
+      // the ceiling — see the seed.ts comments above each rule for exactly
+      // what is and isn't modeled (none apply the low-income floor).
       let sssContribution = 0;
       if (!employee.sssNumber) {
         errors.push('missing_sss_number');
       } else {
-        const sss = await this.taxEngine.computeFlatRateAmount(
+        const sss = await this.taxEngine.computeGraduatedAmount(
           'SSS_EMPLOYEE_CONTRIBUTION_RATE',
           basicPay,
           run.periodEnd,
@@ -117,7 +122,7 @@ export class PayrollService {
       if (!employee.philhealthNumber) {
         errors.push('missing_philhealth_number');
       } else {
-        const philhealth = await this.taxEngine.computeFlatRateAmount(
+        const philhealth = await this.taxEngine.computeGraduatedAmount(
           'PHILHEALTH_EMPLOYEE_CONTRIBUTION_RATE',
           basicPay,
           run.periodEnd,
@@ -130,7 +135,7 @@ export class PayrollService {
       if (!employee.pagibigNumber) {
         errors.push('missing_pagibig_number');
       } else {
-        const pagibig = await this.taxEngine.computeFlatRateAmount(
+        const pagibig = await this.taxEngine.computeGraduatedAmount(
           'PAGIBIG_EMPLOYEE_CONTRIBUTION_RATE',
           basicPay,
           run.periodEnd,

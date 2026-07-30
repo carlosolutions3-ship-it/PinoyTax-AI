@@ -45,7 +45,8 @@ Work through this in order before deploying to a real production environment. As
 
 ## 4. Compliance content accuracy
 
-- [ ] An accountant or tax counsel has reviewed every seeded row in `tax_engine.tax_rules`/`tax_rates_history` against current, actual BIR/SSS/PhilHealth/Pag-IBIG rates — several are explicitly marked `SCAFFOLD VALUE, VERIFY BEFORE USE` in `prisma/seed.ts`
+- [x] Seeded rates re-verified against official sources (Jul 2026): VAT 12%, percentage tax 3%, TRAIN income tax brackets, SSS employee share 5% (SSS Circular No. 2024-006), PhilHealth employee share 2.5% (PhilHealth May 2026 advisory), Pag-IBIG employee share 2% (HDMF Circular No. 460) — see `KNOWN_LIMITATIONS.md` for exactly what is and isn't modeled (ceiling caps yes, low-income floors no). **Still needs a licensed accountant/tax counsel's independent sign-off before real filings** — this was verified via web search against public sources, not a professional review, and does not substitute for one.
+- [ ] EWT (expanded withholding tax) has no single correct default rate to verify — BIR RR 2-98 sets different rates per income-payment type. Before relying on EWT computations, add distinct rule codes per payment type (professional fees, rentals, goods, services, etc.) — see `apps/api/prisma/seed.ts`'s `EWT_RATE_DEFAULT` comment.
 - [ ] The same reviewer has checked the due-date logic in `ComplianceService.generateFilingDeadlines` against the current official filing calendar
 - [ ] Confirm the product's user-facing copy does not claim automated e-filing — this platform prepares filings for manual submission only (no stable public e-filing API exists for BIR/SSS/PhilHealth/Pag-IBIG as of this writing)
 
