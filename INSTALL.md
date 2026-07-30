@@ -99,4 +99,4 @@ npm test --workspace=apps/api          # unit tests (Jest) — 79 tests across 8
 npm run test:e2e                        # end-to-end (Playwright) — see e2e/README.md for prerequisites
 ```
 
-`apps/web` has no unit-test script; its correctness is covered by `next lint`, `tsc --noEmit`, and the Playwright suite above, which exercises it against a real running API. CI (`.github/workflows/ci.yml`) runs the API unit tests, and both apps' builds and lint, on every push/PR to `main` — the E2E suite currently runs locally only (see `KNOWN_LIMITATIONS.md`). Contributions adding test coverage are very welcome; see `CONTRIBUTING.md`.
+`apps/web` has no unit-test script; its correctness is covered by `next lint`, `tsc --noEmit`, and the Playwright suite above, which exercises it against a real running API. CI (`.github/workflows/ci.yml`) runs the API unit tests, both apps' builds and lint, and the full E2E suite against production builds of both apps, on every push/PR to `main`. Contributions adding test coverage are very welcome; see `CONTRIBUTING.md`.
