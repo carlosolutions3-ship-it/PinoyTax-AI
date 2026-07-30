@@ -21,7 +21,12 @@ export class ResponseInterceptor implements NestInterceptor {
       map((data) => ({
         data: data ?? null,
         meta: {
-          requestId: request.headers['x-request-id'] ?? undefined,
+          // Falls back to pino-http's auto-generated id (see logger.module.ts's
+          // genReqId) — the client never actually sends x-request-id today, so
+          // without this fallback every response's requestId was silently
+          // undefined, making it useless for correlating a user's bug report
+          // back to the matching structured log line.
+          requestId: (request.headers['x-request-id'] as string | undefined) ?? request.id,
           timestamp: new Date().toISOString(),
         },
         errors: [],

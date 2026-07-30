@@ -12,6 +12,7 @@ import { MessagingModule } from './messaging/messaging.module';
 import { QueueProcessorsModule } from './queue/queue-processors.module';
 import { NotificationsSchedulingModule } from './modules/notifications/notifications-scheduling.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
+import { installProcessErrorHandlers } from './common/process-error-handlers';
 
 /**
  * Worker process module — everything the BullMQ processors and scheduled
@@ -42,6 +43,7 @@ class WorkerModule {}
 async function bootstrapWorker() {
   const app = await NestFactory.createApplicationContext(WorkerModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
+  installProcessErrorHandlers(app.get(Logger));
   app.enableShutdownHooks();
   app.get(Logger).log('PinoyTax AI worker process started — listening for queued jobs');
 }

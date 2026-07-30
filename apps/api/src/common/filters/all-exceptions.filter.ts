@@ -53,7 +53,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json({
       data: null,
       meta: {
-        requestId: request.headers['x-request-id'] ?? undefined,
+        // See response.interceptor.ts — falls back to pino-http's
+        // auto-generated request id so error responses stay correlatable to
+        // the matching structured log line even without a client-sent header.
+        requestId: (request.headers['x-request-id'] as string | undefined) ?? (request as Request & { id?: string }).id,
         timestamp: new Date().toISOString(),
       },
       errors: [error],

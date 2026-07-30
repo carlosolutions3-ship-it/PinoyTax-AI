@@ -6,6 +6,7 @@ import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { installProcessErrorHandlers } from './common/process-error-handlers';
 import { setupSwagger } from './swagger';
 
 async function bootstrap() {
@@ -18,6 +19,7 @@ async function bootstrap() {
   });
 
   app.useLogger(app.get(Logger));
+  installProcessErrorHandlers(app.get(Logger));
   app.use(helmet());
   app.use(cookieParser());
   app.setGlobalPrefix('v1', { exclude: ['health', 'health/live', 'health/ready', 'docs'] });
