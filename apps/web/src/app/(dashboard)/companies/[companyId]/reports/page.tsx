@@ -6,7 +6,7 @@ import { BarChart3 } from 'lucide-react';
 import { RequireAuth } from '@/components/require-auth';
 import { AppShell } from '@/components/app-shell';
 import { CompanyNav } from '@/components/company-nav';
-import { Badge, Card, ErrorText } from '@/components/ui';
+import { Badge, Card } from '@/components/ui';
 import { BarChart } from '@/components/charts';
 import { complianceApi, payrollApi, taxApi } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api-client';
@@ -39,31 +39,48 @@ function ReportsContent({ companyId }: { companyId: string }) {
   const [taxComputations, setTaxComputations] = useState<TaxComputation[]>([]);
   const [complianceStatus, setComplianceStatus] = useState<ComplianceStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [payrollForbidden, setPayrollForbidden] = useState(false);
+  const [taxForbidden, setTaxForbidden] = useState(false);
+  const [complianceForbidden, setComplianceForbidden] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
-    try {
-      const [runs, computations, status] = await Promise.all([
-        payrollApi.listRuns(companyId),
-        taxApi.list(companyId),
-        complianceApi.getStatus(companyId),
-      ]);
+    // Settled independently — a role that can see compliance data but not
+    // tax computations (e.g. business_owner) should still see the sections
+    // it has access to, rather than one 403 blanking out every section via
+    // a shared Promise.all rejection.
+    const [runsResult, computationsResult, statusResult] = await Promise.allSettled([
+      payrollApi.listRuns(companyId),
+      taxApi.list(companyId),
+      complianceApi.getStatus(companyId),
+    ]);
 
+    if (runsResult.status === 'fulfilled') {
+      setPayrollForbidden(false);
       // Only finalized/paid runs represent settled payroll — draft/processing
       // runs can still change and would skew totals.
-      const settled = runs.filter((r: PayrollRun) => r.status === 'finalized' || r.status === 'paid');
+      const settled = runsResult.value.filter((r: PayrollRun) => r.status === 'finalized' || r.status === 'paid');
       const details = await Promise.all(settled.map((r) => payrollApi.getRun(companyId, r.id)));
-
       setFinalizedRuns(details);
-      setTaxComputations(computations);
-      setComplianceStatus(status);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load reports.');
-    } finally {
-      setIsLoading(false);
+    } else {
+      setPayrollForbidden(runsResult.reason instanceof ApiError && runsResult.reason.status === 403);
     }
+
+    if (computationsResult.status === 'fulfilled') {
+      setTaxForbidden(false);
+      setTaxComputations(computationsResult.value);
+    } else {
+      setTaxForbidden(computationsResult.reason instanceof ApiError && computationsResult.reason.status === 403);
+    }
+
+    if (statusResult.status === 'fulfilled') {
+      setComplianceForbidden(false);
+      setComplianceStatus(statusResult.value);
+    } else {
+      setComplianceForbidden(statusResult.reason instanceof ApiError && statusResult.reason.status === 403);
+    }
+
+    setIsLoading(false);
   }, [companyId]);
 
   useEffect(() => {
@@ -102,11 +119,12 @@ function ReportsContent({ companyId }: { companyId: string }) {
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Reports</h1>
       </div>
       {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-      <ErrorText>{error}</ErrorText>
 
       <Card>
         <h2 className="mb-4 font-semibold">Payroll summary (finalized runs)</h2>
-        {finalizedRuns.length === 0 ? (
+        {payrollForbidden ? (
+          <p className="text-sm text-slate-500">Your role doesn&apos;t have access to payroll data.</p>
+        ) : finalizedRuns.length === 0 ? (
           <p className="text-sm text-slate-500">No finalized payroll runs yet.</p>
         ) : (
           <>
@@ -161,7 +179,9 @@ function ReportsContent({ companyId }: { companyId: string }) {
 
       <Card>
         <h2 className="mb-4 font-semibold">Tax summary (confirmed computations)</h2>
-        {confirmedTax.length === 0 ? (
+        {taxForbidden ? (
+          <p className="text-sm text-slate-500">Your role doesn&apos;t have access to tax data.</p>
+        ) : confirmedTax.length === 0 ? (
           <p className="text-sm text-slate-500">No confirmed tax computations yet.</p>
         ) : (
           <>
@@ -199,7 +219,9 @@ function ReportsContent({ companyId }: { companyId: string }) {
 
       <Card>
         <h2 className="mb-4 font-semibold">Compliance summary</h2>
-        {complianceStatus.length === 0 ? (
+        {complianceForbidden ? (
+          <p className="text-sm text-slate-500">Your role doesn&apos;t have access to compliance data.</p>
+        ) : complianceStatus.length === 0 ? (
           <p className="text-sm text-slate-500">
             No compliance data yet — run a compliance scan from the dashboard.
           </p>

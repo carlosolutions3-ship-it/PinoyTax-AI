@@ -50,6 +50,12 @@ function TaxContent({ companyId }: { companyId: string }) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<ComputationType | ''>('');
   const [statusFilter, setStatusFilter] = useState<ComputationStatus | ''>('');
+  // business_owner has no tax:compute permission at all (not even read —
+  // see ADMIN_MANUAL.md's permission matrix), so the list fetch itself
+  // 403s. Tracked separately from `error` so the page can hide the
+  // "New computation" form (which would just 403 again on submit) instead
+  // of showing a fully interactive form next to an error banner.
+  const [isForbidden, setIsForbidden] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -57,8 +63,13 @@ function TaxContent({ companyId }: { companyId: string }) {
       const result = await taxApi.list(companyId);
       setComputations(result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setError(null);
+      setIsForbidden(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load tax computations.');
+      if (err instanceof ApiError && err.status === 403) {
+        setIsForbidden(true);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Failed to load tax computations.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -93,104 +104,116 @@ function TaxContent({ companyId }: { companyId: string }) {
         </span>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Tax computations</h1>
       </div>
-      <ErrorText>{error}</ErrorText>
 
-      <ComputeTaxForm companyId={companyId} onComputed={load} />
+      {isForbidden ? (
+        <Card>
+          <p className="text-sm text-slate-500">
+            Your role doesn&apos;t have access to tax computations. An accountant, bookkeeper, or firm admin on this
+            company can run and view them.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <ErrorText>{error}</ErrorText>
 
-      <Card>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">History</h2>
-          {computations.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value as ComputationType | '')}
-                className="w-48"
-              >
-                <option value="">All types</option>
-                {Object.entries(TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-              <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as ComputationStatus | '')}
-                className="w-36"
-              >
-                <option value="">All statuses</option>
-                <option value="draft">Draft</option>
-                <option value="confirmed">Confirmed</option>
-              </Select>
+          <ComputeTaxForm companyId={companyId} onComputed={load} />
+
+          <Card>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-semibold">History</h2>
+              {computations.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value as ComputationType | '')}
+                    className="w-48"
+                  >
+                    <option value="">All types</option>
+                    {Object.entries(TYPE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as ComputationStatus | '')}
+                    className="w-36"
+                  >
+                    <option value="">All statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="confirmed">Confirmed</option>
+                  </Select>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        {isLoading ? (
-          <TableSkeleton columns={5} />
-        ) : computations.length === 0 ? (
-          <EmptyState title="No tax computations yet" description="Run your first computation above." />
-        ) : filteredComputations.length === 0 ? (
-          <EmptyState title="No matching computations" description="Try different filters." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Period</th>
-                  <th className="py-2 pr-4">Result</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-100 align-top last:border-0">
-                    <td className="py-2 pr-4 font-medium">{TYPE_LABELS[c.computationType]}</td>
-                    <td className="py-2 pr-4 text-slate-500">
-                      {formatDate(c.periodStart)} – {formatDate(c.periodEnd)}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {c.result != null ? (
-                        <span className="font-semibold">{formatCurrency(c.result)}</span>
-                      ) : (
-                        <span className="text-slate-400">Not computed</span>
-                      )}
-                      {c.missingInputs.length > 0 && (
-                        <p className="mt-1 text-xs text-amber-700">{c.missingInputs.join('; ')}</p>
-                      )}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
-                    </td>
-                    <td className="py-2 pr-4">
-                      {c.status === 'draft' && c.result != null && (
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleConfirm(c.id)}
-                          isLoading={confirmingId === c.id}
-                        >
-                          Confirm
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="mt-4">
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                onChange={setPage}
-                totalItems={filteredComputations.length}
-                pageSize={10}
-              />
-            </div>
-          </div>
-        )}
-      </Card>
+            {isLoading ? (
+              <TableSkeleton columns={5} />
+            ) : computations.length === 0 ? (
+              <EmptyState title="No tax computations yet" description="Run your first computation above." />
+            ) : filteredComputations.length === 0 ? (
+              <EmptyState title="No matching computations" description="Try different filters." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                      <th className="py-2 pr-4">Type</th>
+                      <th className="py-2 pr-4">Period</th>
+                      <th className="py-2 pr-4">Result</th>
+                      <th className="py-2 pr-4">Status</th>
+                      <th className="py-2 pr-4"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageItems.map((c) => (
+                      <tr key={c.id} className="border-b border-slate-100 align-top last:border-0">
+                        <td className="py-2 pr-4 font-medium">{TYPE_LABELS[c.computationType]}</td>
+                        <td className="py-2 pr-4 text-slate-500">
+                          {formatDate(c.periodStart)} – {formatDate(c.periodEnd)}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {c.result != null ? (
+                            <span className="font-semibold">{formatCurrency(c.result)}</span>
+                          ) : (
+                            <span className="text-slate-400">Not computed</span>
+                          )}
+                          {c.missingInputs.length > 0 && (
+                            <p className="mt-1 text-xs text-amber-700">{c.missingInputs.join('; ')}</p>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
+                        </td>
+                        <td className="py-2 pr-4">
+                          {c.status === 'draft' && c.result != null && (
+                            <Button
+                              variant="ghost"
+                              onClick={() => handleConfirm(c.id)}
+                              isLoading={confirmingId === c.id}
+                            >
+                              Confirm
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="mt-4">
+                  <Pagination
+                    page={page}
+                    totalPages={totalPages}
+                    onChange={setPage}
+                    totalItems={filteredComputations.length}
+                    pageSize={10}
+                  />
+                </div>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
     </div>
   );
 }
