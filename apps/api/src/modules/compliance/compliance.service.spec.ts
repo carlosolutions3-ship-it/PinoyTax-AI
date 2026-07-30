@@ -18,8 +18,9 @@ describe('ComplianceService', () => {
     taxRule: { findFirst: jest.Mock };
     taxComputation: { findMany: jest.Mock };
     flaggedIssue: { findFirst: jest.Mock; findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; findMany: jest.Mock };
-    filingDeadline: { findMany: jest.Mock };
+    filingDeadline: { findMany: jest.Mock; createMany: jest.Mock };
     complianceStatus: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock; findMany: jest.Mock };
+    employee: { count: jest.Mock };
   };
   let queueProducer: { enqueueComplianceScan: jest.Mock };
 
@@ -33,6 +34,10 @@ describe('ComplianceService', () => {
   interface ComplianceServicePrivates {
     checkVatClassificationRisk(companyId: string, company: { vatClassification: string }): Promise<void>;
     recomputeComplianceStatus(companyId: string): Promise<void>;
+    generateFilingDeadlines(
+      companyId: string,
+      company: { vatClassification: string; businessType: string },
+    ): Promise<void>;
   }
   const privates = () => service as unknown as ComplianceServicePrivates;
 
@@ -55,8 +60,9 @@ describe('ComplianceService', () => {
         update: jest.fn(),
         findMany: jest.fn(),
       },
-      filingDeadline: { findMany: jest.fn() },
+      filingDeadline: { findMany: jest.fn(), createMany: jest.fn() },
       complianceStatus: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+      employee: { count: jest.fn() },
     };
     queueProducer = { enqueueComplianceScan: jest.fn() };
     service = new ComplianceService(
@@ -132,6 +138,47 @@ describe('ComplianceService', () => {
       await run(COMPANY_ID, { vatClassification: 'non_vat' });
 
       expect(prisma.flaggedIssue.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('generateFilingDeadlines (private, accessed for its idempotency/batching contract)', () => {
+    const run = (company: { vatClassification: string; businessType: string }) =>
+      privates().generateFilingDeadlines(COMPANY_ID, company);
+
+    it('creates only the candidates that do not already exist, in a single createMany call', async () => {
+      prisma.employee.count.mockResolvedValue(0);
+      // Nothing exists yet for this company, so every candidate the
+      // generator produces should be created.
+      prisma.filingDeadline.findMany.mockResolvedValue([]);
+      await run({ vatClassification: 'vat_registered', businessType: 'sole_proprietorship' });
+
+      expect(prisma.filingDeadline.createMany).toHaveBeenCalledTimes(1);
+      const created = prisma.filingDeadline.createMany.mock.calls[0][0].data as Array<{ formCode: string }>;
+      expect(created.length).toBeGreaterThan(0);
+      // No per-candidate findFirst/create round-trips — exactly one
+      // existence check and one batched insert for the whole scan.
+      expect(prisma.filingDeadline.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('is idempotent: re-running with all candidates already existing creates nothing', async () => {
+      prisma.employee.count.mockResolvedValue(0);
+      prisma.filingDeadline.findMany.mockResolvedValue([]);
+      await run({ vatClassification: 'vat_registered', businessType: 'sole_proprietorship' });
+      // Feed back every candidate generateFilingDeadlines just tried to
+      // create as already-existing, then run again.
+      const firstRunData = prisma.filingDeadline.createMany.mock.calls[0][0].data as Array<{
+        formCode: string;
+        periodStart: Date;
+        periodEnd: Date;
+      }>;
+      prisma.filingDeadline.createMany.mockClear();
+      prisma.filingDeadline.findMany.mockResolvedValue(
+        firstRunData.map((d) => ({ formCode: d.formCode, periodStart: d.periodStart, periodEnd: d.periodEnd })),
+      );
+
+      await run({ vatClassification: 'vat_registered', businessType: 'sole_proprietorship' });
+
+      expect(prisma.filingDeadline.createMany).not.toHaveBeenCalled();
     });
   });
 

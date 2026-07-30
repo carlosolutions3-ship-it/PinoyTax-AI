@@ -171,28 +171,32 @@ export class ComplianceService {
       }
     }
 
-    for (const candidate of candidates) {
-      const exists = await this.prisma.filingDeadline.findFirst({
-        where: {
+    // Batched instead of one findFirst+create pair per candidate (dozens per
+    // scan, across 4 quarters/12 months of form types) — a single existence
+    // query plus a single createMany replaces up to ~2×N sequential
+    // round-trips with 2 total.
+    const existing = await this.prisma.filingDeadline.findMany({
+      where: { companyId, formCode: { in: candidates.map((c) => c.formCode) } },
+      select: { formCode: true, periodStart: true, periodEnd: true },
+    });
+    const existingKeys = new Set(
+      existing.map((e) => `${e.formCode}|${e.periodStart.getTime()}|${e.periodEnd.getTime()}`),
+    );
+    const toCreate = candidates.filter(
+      (c) => !existingKeys.has(`${c.formCode}|${c.periodStart.getTime()}|${c.periodEnd.getTime()}`),
+    );
+    if (toCreate.length > 0) {
+      await this.prisma.filingDeadline.createMany({
+        data: toCreate.map((candidate) => ({
           companyId,
           formCode: candidate.formCode,
+          agency: candidate.agency,
           periodStart: candidate.periodStart,
           periodEnd: candidate.periodEnd,
-        },
+          dueDate: candidate.dueDate,
+          status: candidate.dueDate < today ? 'overdue' : ('upcoming' as const),
+        })),
       });
-      if (!exists) {
-        await this.prisma.filingDeadline.create({
-          data: {
-            companyId,
-            formCode: candidate.formCode,
-            agency: candidate.agency,
-            periodStart: candidate.periodStart,
-            periodEnd: candidate.periodEnd,
-            dueDate: candidate.dueDate,
-            status: candidate.dueDate < today ? 'overdue' : 'upcoming',
-          },
-        });
-      }
     }
   }
 
