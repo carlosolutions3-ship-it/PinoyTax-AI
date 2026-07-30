@@ -77,7 +77,7 @@ npm run build && node dist/worker.js
 npm run dev:web
 ```
 
-The frontend listens on `http://localhost:3000` and expects the API at `http://localhost:3001/v1` by default (`NEXT_PUBLIC_API_URL` in `apps/web`, not yet given its own `.env.local.example` file — set it directly in your shell or a `.env.local` you create if the default doesn't match your setup).
+The frontend listens on `http://localhost:3000` and expects the API at `http://localhost:3001/v1` by default. If that default doesn't match your setup, `cp apps/web/.env.local.example apps/web/.env.local` and edit `NEXT_PUBLIC_API_URL` — Next.js only exposes `NEXT_PUBLIC_*` vars to the browser, and they're baked in at build time, so changing it after `next build` requires a rebuild.
 
 ## 7. Verify the setup
 
