@@ -35,7 +35,7 @@ jobs:
       JWT_REFRESH_EXPIRES_IN: 7d
       JWT_REFRESH_EXPIRES_IN_REMEMBER_ME: 30d
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -65,7 +65,7 @@ jobs:
     name: Web (build, lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -123,7 +123,7 @@ jobs:
       # connection failure rather than blocking boot), so the API runs fine
       # in this job without a RabbitMQ service container.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
