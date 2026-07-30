@@ -59,7 +59,35 @@ docker build -t pinoytax-web:latest ./apps/web \
 
 Push to your registry and deploy via your orchestrator of choice (Kubernetes, ECS, etc.). The provided `docker-compose.yml` is intended for local development and staging smoke-tests, not as a production deployment mechanism.
 
-## 5. Kubernetes deployment shape (recommended)
+## 5. Frontend on Vercel (alternative to the Docker build above)
+
+`apps/web` can deploy on Vercel instead of the Docker image in §4, while `apps/api`/`worker` still deploy via Docker (§6) — this is a plain npm-workspaces monorepo, so Vercel's zero-config detection at the repository root will otherwise try to run the root `package.json`'s `build` script, which builds **both** workspaces (`npm run build --workspace=apps/api && npm run build --workspace=apps/web`) and fails or wastes a build on the NestJS API, which Vercel doesn't run anyway. `apps/web/vercel.json` fixes this by pinning an explicit, workspace-scoped install/build command — it only takes effect once **Root Directory** is set correctly in the project settings below.
+
+**Vercel project settings:**
+
+| Setting | Value |
+|---|---|
+| Root Directory | `apps/web` |
+| Framework Preset | Next.js (auto-detected) |
+| Install Command | *(from `apps/web/vercel.json`)* `cd ../.. && npm install` |
+| Build Command | *(from `apps/web/vercel.json`)* `cd ../.. && npm run build --workspace=apps/web` |
+| Output Directory | Leave blank/default — Vercel's Next.js builder manages this itself; it does not use `next.config.js`'s `output: 'standalone'` (that setting is only consumed by the Docker build in §4) |
+
+With Root Directory set to `apps/web`, Vercel detects the root `package.json`'s `workspaces` field and runs the install step from the repository root (needed to resolve the npm workspace correctly) before `cd`-ing into `apps/web` for the build — `apps/web/vercel.json`'s explicit `cd ../..` in both commands makes this independent of that auto-detection rather than relying on it silently. `apps/api`'s *source* is still present during install (npm needs every workspace's `package.json` to resolve the lockfile), but its `build`/`start` scripts are never invoked — confirm this by checking the Vercel build log has no `nest build` step.
+
+**Required environment variable** (Vercel dashboard → Project → Settings → Environment Variables, set for Production *and* Preview):
+
+| Variable | Value | Notes |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com/v1` | Baked into the client bundle at build time (Next.js only exposes `NEXT_PUBLIC_*` to the browser) — changing it requires a new deploy, it cannot be hot-swapped at runtime. Point it at wherever `apps/api` is actually running (§6/§4), including the `/v1` prefix. |
+
+No other environment variables are read by the frontend build or runtime — `apps/web/src/lib/api-client.ts` is the only `process.env` reference in the app.
+
+**On the API side**, once the frontend has a real Vercel URL, set `APP_WEB_URL` (§2 item 7) on `apps/api` to that URL so CORS and cookie scoping allow it, and confirm CORS is not left wide-open to `*` in production.
+
+**Optional — skip rebuilds when only the backend changed**: Vercel's Project Settings → Git → "Ignored Build Step" accepts a shell command; a common pattern for non-Turborepo monorepos is `git diff --quiet HEAD^ HEAD -- apps/web` (exit 0 = skip, exit 1 = build — this is the opposite of normal exit-code intuition, and matches `git diff --quiet`'s own exit codes exactly, so no wrapping is needed). This was deliberately **not** committed into `apps/web/vercel.json` as an `ignoreCommand`: `HEAD^` fails on a shallow clone or a repo with only one commit, which would silently skip every build until fixed — configure it in the dashboard only after confirming Vercel's git integration uses a deep-enough clone.
+
+## 6. Kubernetes deployment shape (recommended)
 
 Per the Phase 1 architecture, deploy these as **separate scalable units**:
 
@@ -71,23 +99,23 @@ Per the Phase 1 architecture, deploy these as **separate scalable units**:
 
 Both `api` and `worker` share the same image and `DATABASE_URL`/`REDIS_URL`/`RABBITMQ_URL`/`ANTHROPIC_API_KEY`/`SMTP_*`/`S3_*` secrets — inject via your orchestrator's secret management (Kubernetes Secrets + an external secrets operator, AWS Secrets Manager, etc.), never as plain ConfigMap values for anything sensitive.
 
-## 6. Health checks
+## 7. Health checks
 
 - `GET /health/live` — process liveness only, no dependency checks. Use for liveness probes.
 - `GET /health/ready` — checks Postgres and Redis connectivity. Use for readiness probes.
 - `GET /health` — full check including memory heap usage. Use for external uptime monitoring, not orchestrator probes (slower, more dependency-sensitive).
 
-## 7. Zero-downtime deploys
+## 8. Zero-downtime deploys
 
 - Run `prisma migrate deploy` as a separate step **before** rolling out new application code, and ensure migrations are backward-compatible with the previous code version (additive columns/tables, no destructive renames in the same release) so a mid-rollout mix of old/new pods never breaks.
 - Use rolling updates (Kubernetes default) or blue-green, cutting traffic over only after the new revision's readiness probe passes.
 
-## 8. Observability
+## 9. Observability
 
 - Structured JSON logs (Pino) to stdout — ship to your log aggregator (ELK, Loki, CloudWatch Logs, etc.) via your platform's standard container log collection; no additional shipping code is built into the app.
 - `/docs` (Swagger UI) is enabled unconditionally in this build — **restrict access to it in production** (network policy, auth-gated ingress rule, or disable the `setupSwagger` call for the production build) since it exposes your full API surface.
 - No APM/tracing vendor is wired in; add OpenTelemetry instrumentation if your organization requires distributed tracing before a high-stakes production launch.
 
-## 9. Rollback
+## 10. Rollback
 
 Since migrations are forward-only SQL files, rollback of a bad deploy is: revert the application image/deployment to the previous revision. Do not attempt to hand-write down-migrations for this schema without a DBA review — several migrations (RLS, audit append-only grants) are structural and not trivially reversible.
