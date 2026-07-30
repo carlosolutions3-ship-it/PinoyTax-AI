@@ -1,5 +1,5 @@
 # ---- Base ----
-FROM node:20-alpine AS base
+FROM node:26-alpine AS base
 WORKDIR /app
 
 # ---- Dependencies ----
@@ -24,7 +24,7 @@ RUN npm run build
 # root — see docker-compose.yml), Next resolves its own freshly-installed
 # package-lock.json here as the workspace root, so the trace lands flat at
 # .next/standalone/server.js rather than nested under an apps/web/ path.
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 RUN addgroup -S pinoytax && adduser -S pinoytax -G pinoytax
 
