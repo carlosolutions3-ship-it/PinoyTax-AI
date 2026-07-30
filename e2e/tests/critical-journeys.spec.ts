@@ -148,9 +148,15 @@ test.describe('PinoyTax AI critical journeys', () => {
     await expect(page.getByText(FIXTURES.firmClientCompany.businessName)).toBeVisible({ timeout: 10_000 });
 
     // Dashboard aggregates the newly onboarded client into the portfolio.
+    // exact: true — the async compliance scan may have already populated the
+    // "Upcoming deadlines" feed by now, which renders each row as
+    // "{businessName} — {agency} {form}", an otherwise-ambiguous substring
+    // match against the same text in the clients table above it.
     await page.goto(firmUrl);
     await expect(page.getByText('Client companies', { exact: true })).toBeVisible();
-    await expect(page.getByText(FIXTURES.firmClientCompany.businessName)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(FIXTURES.firmClientCompany.businessName, { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
 
     // The client's own company workspace shows it's firm-managed — the
     // Firm-vs-Company context distinction — with a link back to the firm.
