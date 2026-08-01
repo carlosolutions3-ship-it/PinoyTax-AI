@@ -10,7 +10,7 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { CookieOptions, Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -25,6 +25,22 @@ import {
 } from './dto/auth.dto';
 
 const REFRESH_COOKIE = 'pinoytax_refresh_token';
+
+// SameSite=Strict only works when the frontend and API are same-site (e.g.
+// localhost:3000/3001 in dev, which differ only by port). This project's
+// documented production deployment (Vercel frontend + a separately-hosted
+// API — see DEPLOYMENT.md §5) puts them on different domains entirely, i.e.
+// genuinely cross-site — Strict (and Lax, for non-navigation requests like
+// fetch) cookies are never sent there, silently breaking the refresh flow.
+// SameSite=None is required for cross-site cookies, which itself requires
+// Secure=true — already true whenever NODE_ENV=production.
+const isProduction = process.env.NODE_ENV === 'production';
+const REFRESH_COOKIE_BASE_OPTIONS: CookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'strict',
+  path: '/v1/auth',
+};
 
 @ApiTags('auth')
 @Controller('auth')
@@ -96,7 +112,7 @@ export class AuthController {
     if (refreshToken) {
       await this.authService.logout(refreshToken);
     }
-    res.clearCookie(REFRESH_COOKIE);
+    res.clearCookie(REFRESH_COOKIE, REFRESH_COOKIE_BASE_OPTIONS);
     return { message: 'Logged out.' };
   }
 
@@ -135,11 +151,8 @@ export class AuthController {
 
   private setRefreshCookie(res: Response, token: string, rememberMe: boolean): void {
     res.cookie(REFRESH_COOKIE, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      ...REFRESH_COOKIE_BASE_OPTIONS,
       maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000,
-      path: '/v1/auth',
     });
   }
 
