@@ -34,9 +34,11 @@ npx prisma migrate deploy
 npx prisma generate
 ```
 
+`prisma` (the CLI, not just `@prisma/client`) is a production dependency specifically so this command also works run directly from the deployed `apps/api` image — e.g. as a Kubernetes `initContainer`/one-off `Job` or an ECS one-off task using the same image that serves traffic, a common pattern for this exact command. `prisma/seed.ts` below is different: it deliberately stays a `ts-node`/devDependency-only path, since seeding is a one-time bootstrap step meant to run from a full checkout or CI job, not the hardened runtime image (which doesn't carry `ts-node` or a TypeScript compiler).
+
 Review each migration file once against your actual PostgreSQL version and hosting provider (some managed Postgres providers restrict `CREATE ROLE` or superuser-only operations like enabling certain extensions) before running `migrate deploy` for the first time.
 
-Seed reference data (roles, permissions, tax rules, form templates) after migrations:
+Seed reference data (roles, permissions, tax rules, form templates, firm roles) after migrations, from a machine/CI job with the full repo and devDependencies installed:
 
 ```bash
 SEED_ADMIN_EMAIL=admin@yourcompany.com SEED_ADMIN_PASSWORD='<strong-password>' npm run prisma:seed
@@ -61,19 +63,34 @@ Push to your registry and deploy via your orchestrator of choice (Kubernetes, EC
 
 ## 5. Frontend on Vercel (alternative to the Docker build above)
 
-`apps/web` can deploy on Vercel instead of the Docker image in §4, while `apps/api`/`worker` still deploy via Docker (§6) — this is a plain npm-workspaces monorepo, so Vercel's zero-config detection at the repository root will otherwise try to run the root `package.json`'s `build` script, which builds **both** workspaces (`npm run build --workspace=apps/api && npm run build --workspace=apps/web`) and fails or wastes a build on the NestJS API, which Vercel doesn't run anyway. `apps/web/vercel.json` fixes this by pinning an explicit, workspace-scoped install/build command — it only takes effect once **Root Directory** is set correctly in the project settings below.
+`apps/web` can deploy on Vercel instead of the Docker image in §4, while `apps/api`/`worker` still deploy via Docker (§6). This is a plain npm-workspaces monorepo, and Vercel's default **Root Directory** is the repository root — if it isn't explicitly changed in the dashboard, Vercel's zero-config detection runs the root `package.json`'s `build` script, which chains **both** workspaces (`npm run build --workspace=apps/api && npm run build --workspace=apps/web`).
+
+That root script doesn't just waste a build — it reliably **fails**. `apps/api`'s build requires a fully generated `@prisma/client` (it imports generated enums like `FilingStatus` and relies on generated Prisma types throughout). A plain `npm install` run from the monorepo root triggers `@prisma/client`'s own `postinstall` hook, but that hook can't reliably locate `apps/api/prisma/schema.prisma` from a root-level install in an npm-workspaces layout — this is a documented Prisma-in-monorepos limitation, not specific to Vercel. It silently falls back to a stub client instead of erroring, so `nest build` then fails downstream with ~60 TypeScript errors (`Module '"@prisma/client"' has no exported member 'FilingStatus'`, `Property '$queryRawUnsafe' is missing`, and cascading implicit-`any` errors on every Prisma-typed callback). This was confirmed by reproducing the exact failure locally: a clean `rm -rf node_modules && npm install && npm run build` from the repo root fails with that error set every time. The Docker build in §4 doesn't hit this because its `deps` stage runs `npx prisma generate` explicitly, from inside `apps/api`, before `nest build` — the root workspace script has no equivalent step.
+
+**Fix — a root-level `vercel.json`** (committed at the repository root, not just `apps/web/vercel.json`) pins the install/build commands so Vercel never runs the ambiguous root `build` script and never touches `apps/api`, regardless of what Root Directory is set to in the dashboard:
+
+```json
+{
+  "framework": "nextjs",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build --workspace=apps/web",
+  "outputDirectory": "apps/web/.next"
+}
+```
+
+This is the primary, dashboard-independent fix and is verified locally by running the exact commands above from a clean install — `apps/web` builds to completion without `apps/api`'s `nest build` ever running. `apps/web/vercel.json` (with its `cd ../..` variants) is left in place as a second, redundant safeguard for the alternate configuration where someone sets Root Directory to `apps/web` directly — either configuration now produces a working, `apps/api`-free build.
 
 **Vercel project settings:**
 
 | Setting | Value |
 |---|---|
-| Root Directory | `apps/web` |
-| Framework Preset | Next.js (auto-detected) |
-| Install Command | *(from `apps/web/vercel.json`)* `cd ../.. && npm install` |
-| Build Command | *(from `apps/web/vercel.json`)* `cd ../.. && npm run build --workspace=apps/web` |
-| Output Directory | Leave blank/default — Vercel's Next.js builder manages this itself; it does not use `next.config.js`'s `output: 'standalone'` (that setting is only consumed by the Docker build in §4) |
+| Root Directory | Leave blank / `.` (repository root) — the default. Do **not** point it at `apps/web` unless you also remove the root `vercel.json`, since Vercel only reads one `vercel.json`, the one inside Root Directory. |
+| Framework Preset | Next.js (auto-detected from `apps/web`'s dependencies via `outputDirectory`) |
+| Install Command | *(from root `vercel.json`)* `npm install` |
+| Build Command | *(from root `vercel.json`)* `npm run build --workspace=apps/web` |
+| Output Directory | *(from root `vercel.json`)* `apps/web/.next` — required because Root Directory is the repo root, not `apps/web`, so Vercel can't infer it automatically the way it would for a plain single-app repo. Unrelated to `next.config.js`'s `output: 'standalone'`, which only affects the Docker build in §4. |
 
-With Root Directory set to `apps/web`, Vercel detects the root `package.json`'s `workspaces` field and runs the install step from the repository root (needed to resolve the npm workspace correctly) before `cd`-ing into `apps/web` for the build — `apps/web/vercel.json`'s explicit `cd ../..` in both commands makes this independent of that auto-detection rather than relying on it silently. `apps/api`'s *source* is still present during install (npm needs every workspace's `package.json` to resolve the lockfile), but its `build`/`start` scripts are never invoked — confirm this by checking the Vercel build log has no `nest build` step.
+`apps/api`'s *source* is still present after install (npm needs every workspace's `package.json` to resolve the lockfile), but its `build`/`start` scripts are never invoked — confirm this by checking the Vercel build log has no `nest build` step.
 
 **Required environment variable** (Vercel dashboard → Project → Settings → Environment Variables, set for Production *and* Preview):
 

@@ -1,16 +1,24 @@
 # Production Deployment Checklist
 
-Work through this in order before deploying to a real production environment. As of v1.0, every item in §0 below has been verified at least once in a disposable sandbox (build, migrate, seed, boot, and a full authenticated browser walkthrough) — re-run them yourself against your own target infrastructure before going live, since a sandbox pass does not substitute for verifying against your actual production database, secrets, and network.
+Work through this in order before deploying to a real production environment. As of v1.2.0, every item in §0 below has been verified against **real `docker build` output actually booted in a real `docker compose` stack** (Postgres/Redis/RabbitMQ + the built api/worker/web images, not `npm run start:dev`) — re-run them yourself against your own target infrastructure before going live, since this pass does not substitute for verifying against your actual production database, secrets, and network.
 
 ## 0. First execution (do this before anything else)
 
-- [x] Run `npm install --workspaces` and resolve any dependency version conflicts npm surfaces
-- [x] Run `npx prisma generate` and confirm the Prisma Client builds against `schema.prisma` without errors
-- [x] Run `npm run build` for `apps/api` and confirm a clean TypeScript compile
-- [x] Run `npx prisma migrate deploy` against a real disposable Postgres instance and confirm every migration in `apps/api/prisma/migrations/` applies cleanly, in order, with no errors
-- [x] Boot the API (`node dist/main.js`) against that database and confirm `/health` returns 200
-- [x] Run `npm run prisma:seed` and confirm roles/permissions/tax rules/form templates load without error
-- [x] Manually exercise the flow in `INSTALL.md` §7 end to end (register → verify → login → create company → run compliance scan) with the worker process also running
+- [x] Build the real `apps/api` and `apps/web` Docker images (`docker build`, not just `npm run build`) and confirm both succeed
+- [x] Boot the built images in a real `docker compose` stack (Postgres/Redis/RabbitMQ + api/worker/web) with `NODE_ENV=production` and confirm all six containers report healthy
+- [x] Run `npx prisma migrate deploy` (or the SQL files directly) against that real Postgres and confirm every migration in `apps/api/prisma/migrations/` applies cleanly, in order, with no errors — confirm all 10 schemas exist afterward
+- [x] Run `npm run prisma:seed` and confirm roles/permissions/tax rules/form templates/firm roles load without error
+- [x] Confirm `GET /health`, `/health/live`, `/health/ready` all return 200 from the running container
+- [x] Run the full Playwright critical-journeys suite against the running production-mode stack (not dev servers) and confirm every journey passes
+- [x] Rehearse a full backup/restore cycle (`pg_dump` → fresh DB → `pg_restore`) against the live container and confirm all schemas/row counts survive — see `BACKUP_RESTORE.md`
+
+**Four real, deployment-only bugs were found and fixed this way** — none of them were visible in dev mode (`nest start --watch` never touches the compiled output) or in CI (which only checks that `npm run build` compiles, never boots the result):
+1. `dist/main.js` never existed — the compiled output nested under `dist/src/main.js` because `tsconfig.build.json` had no `rootDir`, and `apps/api`'s own `start:prod` script was broken (fixed: pinned `rootDir` and excluded `prisma/` from the build compile).
+2. `prisma` (the CLI) was a devDependency, so it was missing entirely from the production image — `prisma migrate deploy` had nothing to run (fixed: moved to `dependencies`).
+3. The runtime image's files were all root-owned while the container runs as non-root `pinoytax`, so `prisma migrate deploy` couldn't write its engine cache (fixed: `--chown=pinoytax:pinoytax` on every `COPY` in the runtime stage).
+4. The `worker` container reported "unhealthy" forever in `docker ps`/Swarm/ECS — it shares the `api` image's `HEALTHCHECK`, which HTTP-probes a port only the `api` process listens on (fixed: `WORKER_PROCESS=true` skips the HTTP probe for it — irrelevant for Kubernetes, which never reads a Dockerfile's `HEALTHCHECK`, but matters for `docker-compose`/Swarm/ECS).
+
+See `DEPLOYMENT.md` for the exact commands and `RELEASE.md`'s v1.2.0 entry for the full writeup, including what a sandboxed CI-like environment's network policy specifically could and couldn't verify (a confirmed policy block on Alpine's own package CDN, unrelated to any of the four fixes above — real production/CI environments have normal internet access and won't hit it).
 
 ## 1. Secrets & configuration
 
