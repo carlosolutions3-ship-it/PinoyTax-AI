@@ -3,6 +3,7 @@ dist/
 build/
 .next/
 out/
+.vercel
 *.log
 .env
 .env.local
