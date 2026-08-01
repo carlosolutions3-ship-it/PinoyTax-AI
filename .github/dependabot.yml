@@ -8,19 +8,37 @@ updates:
       npm-dependencies:
         patterns:
           - "*"
+    # Major-version bumps (Next.js 14->16, React 18->19, Tailwind 3->4,
+    # TypeScript 5->7, NestJS 10->11, Prisma 5->7, etc.) each require real
+    # migration work and manual verification — they should never be
+    # auto-proposed bundled into one weekly PR. Dependabot still opens PRs
+    # for minor/patch updates; major bumps must be evaluated and applied
+    # individually, on purpose.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/apps/api"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/apps/web"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
