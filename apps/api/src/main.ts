@@ -12,9 +12,9 @@ import { setupSwagger } from './swagger';
 import { PrismaService } from './common/prisma/prisma.service';
 
 // APP_WEB_URL is matched against the browser's Origin header, which never
-// has a trailing slash — a value like "https://app.vercel.app/" (trailing
-// slash) or one with stray whitespace from how it was pasted into a
-// dashboard would silently fail this exact-string CORS match and reject
+// has a trailing slash — a value like "https://web-production-xxxx.up.railway.app/"
+// (trailing slash) or one with stray whitespace from how it was pasted into
+// a dashboard would silently fail this exact-string CORS match and reject
 // every browser request, surfacing to users as a generic "Unable to log
 // in" (the frontend can't distinguish a CORS rejection from any other
 // network failure — see apps/web/src/lib/api-client.ts).

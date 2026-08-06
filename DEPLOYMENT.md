@@ -4,11 +4,13 @@ This document covers deploying PinoyTax AI to a production environment. For loca
 
 ## 1. Architecture recap
 
-- `apps/api` — NestJS backend, deployed as **two separate processes** from the same image:
+**Railway is the supported production platform** — all five pieces below deploy there as separate services in one project (see §5). Nothing in the app assumes Railway specifically (it's a plain multi-stage Dockerfile setup), so any Docker-capable host works too (§4/§6 cover that path), but Railway is what's actually verified end-to-end.
+
+- `apps/api` — NestJS backend, deployed as **two separate services** from the same image/Dockerfile:
   - `api` — HTTP server (`node dist/main.js`)
   - `worker` — background job processor, no HTTP server (`node dist/worker.js`)
-- `apps/web` — Next.js frontend (standalone output)
-- PostgreSQL 15+, Redis 7+, RabbitMQ 3.13+ as stateful dependencies
+- `apps/web` — Next.js frontend (standalone output), its own Dockerfile, deployed as a third service
+- PostgreSQL 15+, Redis 7+, RabbitMQ 3.13+ as stateful dependencies — on Railway, deployed from the official templates with a persistent volume each
 - S3-compatible object storage for the document vault
 - SMTP provider for transactional email
 
@@ -61,52 +63,84 @@ docker build -t pinoytax-web:latest ./apps/web \
 
 Push to your registry and deploy via your orchestrator of choice (Kubernetes, ECS, etc.). The provided `docker-compose.yml` is intended for local development and staging smoke-tests, not as a production deployment mechanism.
 
-## 5. Frontend on Vercel (alternative to the Docker build above)
+## 5. Railway deployment (recommended production path)
 
-`apps/web` can deploy on Vercel instead of the Docker image in §4, while `apps/api`/`worker` still deploy via Docker (§6). This is a plain npm-workspaces monorepo, and Vercel's default **Root Directory** is the repository root — if it isn't explicitly changed in the dashboard, Vercel's zero-config detection runs the root `package.json`'s `build` script, which chains **both** workspaces (`npm run build --workspace=apps/api && npm run build --workspace=apps/web`).
+PinoyTax AI runs as **five services in one Railway project**: `Postgres`, `Redis`, `RabbitMQ` (each an official template with a persistent volume), plus `api`, `worker`, and `web` built from this GitHub repo. This section documents exact settings — every gotcha below was hit and root-caused running a real deployment, not theorized.
 
-That root script doesn't just waste a build — it reliably **fails**. `apps/api`'s build requires a fully generated `@prisma/client` (it imports generated enums like `FilingStatus` and relies on generated Prisma types throughout). A plain `npm install` run from the monorepo root triggers `@prisma/client`'s own `postinstall` hook, but that hook can't reliably locate `apps/api/prisma/schema.prisma` from a root-level install in an npm-workspaces layout — this is a documented Prisma-in-monorepos limitation, not specific to Vercel. It silently falls back to a stub client instead of erroring, so `nest build` then fails downstream with ~60 TypeScript errors (`Module '"@prisma/client"' has no exported member 'FilingStatus'`, `Property '$queryRawUnsafe' is missing`, and cascading implicit-`any` errors on every Prisma-typed callback). This was confirmed by reproducing the exact failure locally: a clean `rm -rf node_modules && npm install && npm run build` from the repo root fails with that error set every time. The Docker build in §4 doesn't hit this because its `deps` stage runs `npx prisma generate` explicitly, from inside `apps/api`, before `nest build` — the root workspace script has no equivalent step.
+### 5.1 Data services
 
-**Fix — a root-level `vercel.json`** (committed at the repository root, not just `apps/web/vercel.json`) pins the install/build commands so Vercel never runs the ambiguous root `build` script and never touches `apps/api`, regardless of what Root Directory is set to in the dashboard:
+Add `Postgres`, `Redis`, and `RabbitMQ` from Railway's template marketplace (not raw Docker images by hand) — the templates come with a persistent volume already attached, which a hand-rolled service does not get automatically. **A Railway service can only have one volume**; if you experiment and end up with two, remove the extra one before deploying or the config will be rejected.
 
-```json
-{
-  "framework": "nextjs",
-  "installCommand": "npm install",
-  "buildCommand": "npm run build --workspace=apps/web",
-  "outputDirectory": "apps/web/.next"
-}
-```
+### 5.2 `api` and `worker` services
 
-This is the primary, dashboard-independent fix and is verified locally by running the exact commands above from a clean install — `apps/web` builds to completion without `apps/api`'s `nest build` ever running. `apps/web/vercel.json` (with its `cd ../..` variants) is left in place as a second, redundant safeguard for the alternate configuration where someone sets Root Directory to `apps/web` directly — either configuration now produces a working, `apps/api`-free build.
+Both deploy from this repo, `main` branch, and share the same Dockerfile:
 
-**Vercel project settings:**
+| Setting | `api` | `worker` |
+|---|---|---|
+| Root Directory | `apps/api` | `apps/api` |
+| Builder | Dockerfile | Dockerfile |
+| Dockerfile Path | `apps/api/Dockerfile` | `apps/api/Dockerfile` |
+| Start Command | `sh -c "npx prisma migrate deploy && node dist/main.js"` | `node dist/worker.js` |
+| Healthcheck Path | `/health/ready` | *(leave unset — worker has no HTTP server)* |
+
+**The Dockerfile Path gotcha**: even with Root Directory set to `apps/api`, Railway's `dockerfilePath` is resolved **relative to the repository root**, not the Root Directory — set it to `Dockerfile` alone and Railway silently falls back to its own Railpack buildpack auto-detection instead of erroring, which builds via `npm run build` and then runs `npm run start` (`nest start`, a dev-mode command that fails at runtime with `Cannot find module '/app/dist/main'` because devDependencies like `@nestjs/cli` aren't in the production `npm ci --omit=dev` layer). The build *looks* fine in the log (`Detected Next.js/Node version`, `npm run build` succeeds) right up until the container crash-loops. Always use the full `apps/api/Dockerfile` path and confirm the build log shows `[internal] load build definition from apps/api/Dockerfile`, not `[railpack] ...` lines.
+
+**Migrations**: run via the `api` service's Start Command shell chain above, which reliably runs `prisma migrate deploy` before every boot (idempotent — instantly reports "No pending migrations to apply" once applied). A separate Railway "Pre-Deploy Command" configuration was tried first and proved unreliable in practice (the configured command was observed reverting between deploys, and its execution window got cut short before finishing) — chaining migration into the actual Start Command avoided that entirely, since it's the one thing every deploy reliably runs to completion.
+
+**Seeding the platform admin**: do **not** rely on a separate seed command/job on Railway, for the same reliability reason as migrations above. Instead, `apps/api/src/main.ts` seeds/promotes the platform admin **automatically on every boot** of the `api` service, guarded by `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` and fully idempotent (`upsert`, safe to leave set permanently). Set those two variables on the `api` service and the admin account exists after the next deploy — no manual step required. (Reference-data seeding — roles, permissions, tax rules, form templates — still needs a one-time run of `npm run prisma:seed` from a full checkout with devDependencies, per §3, since it isn't part of the boot-time hook.)
+
+### 5.3 `web` service
 
 | Setting | Value |
 |---|---|
-| Root Directory | Leave blank / `.` (repository root) — the default. Do **not** point it at `apps/web` unless you also remove the root `vercel.json`, since Vercel only reads one `vercel.json`, the one inside Root Directory. |
-| Framework Preset | Next.js (auto-detected from `apps/web`'s dependencies via `outputDirectory`) |
-| Install Command | *(from root `vercel.json`)* `npm install` |
-| Build Command | *(from root `vercel.json`)* `npm run build --workspace=apps/web` |
-| Output Directory | *(from root `vercel.json`)* `apps/web/.next` — required because Root Directory is the repo root, not `apps/web`, so Vercel can't infer it automatically the way it would for a plain single-app repo. Unrelated to `next.config.js`'s `output: 'standalone'`, which only affects the Docker build in §4. |
+| Root Directory | `apps/web` |
+| Builder | Dockerfile |
+| Dockerfile Path | `apps/web/Dockerfile` (repo-root-relative — same gotcha as §5.2) |
+| Start Command | *(leave unset — the Dockerfile's own `CMD` is correct here)* |
+| Healthcheck Path | `/login` (or `/`) |
 
-`apps/api`'s *source* is still present after install (npm needs every workspace's `package.json` to resolve the lockfile), but its `build`/`start` scripts are never invoked — confirm this by checking the Vercel build log has no `nest build` step.
+`NEXT_PUBLIC_API_URL` must be a **service variable on `web`** set to the `api` service's public domain plus `/v1` (e.g. `https://api-production-xxxx.up.railway.app/v1`) — Railway makes service variables available as Docker build args, and `apps/web/Dockerfile` already declares `ARG NEXT_PUBLIC_API_URL`, so no Dockerfile change is needed. Verify it actually got inlined after deploying: fetch the built page and its JS chunks, and confirm the literal URL appears in the compiled bundle rather than a runtime `process.env` lookup (the latter means the variable wasn't available at build time and the app silently fell back to `http://localhost:3001/v1`, which will never work in production and manifests as a generic "Unable to log in" with no useful error — see `apps/web/src/lib/api-client.ts`).
 
-**Required environment variable** (Vercel dashboard → Project → Settings → Environment Variables, set for Production *and* Preview):
+### 5.4 Environment variables and internal networking
 
-| Variable | Value | Notes |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com/v1` | Baked into the client bundle at build time (Next.js only exposes `NEXT_PUBLIC_*` to the browser) — changing it requires a new deploy, it cannot be hot-swapped at runtime. Point it at wherever `apps/api` is actually running (§6/§4), including the `/v1` prefix. |
+Use Railway's reference-variable syntax (`${{ServiceName.VARIABLE}}`) instead of copy-pasting connection strings — it stays correct if a service's credentials ever rotate:
 
-No other environment variables are read by the frontend build or runtime — `apps/web/src/lib/api-client.ts` is the only `process.env` reference in the app.
+```
+# On api and worker:
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+RABBITMQ_URL=amqp://${{RabbitMQ.RABBITMQ_DEFAULT_USER}}:${{RabbitMQ.RABBITMQ_DEFAULT_PASS}}@${{RabbitMQ.RAILWAY_PRIVATE_DOMAIN}}:5672/${{RabbitMQ.RABBITMQ_DEFAULT_VHOST}}
+```
 
-**On the API side**, once the frontend has a real Vercel URL, set `APP_WEB_URL` (§2 item 7) on `apps/api` to that URL so CORS and cookie scoping allow it, and confirm CORS is not left wide-open to `*` in production.
+**The RabbitMQ port gotcha**: RabbitMQ's own `RAILWAY_SERVICE_RABBITMQ_URL` convenience variable resolves empty in practice — build the URL from the individual pieces above instead. And do **not** use RabbitMQ's `PORT` variable for this: on the `rabbitmq:4-management` image, `PORT` is Railway's binding for the **management UI** (15672), not AMQP. The AMQP listener is always `5672` — confirmed directly from the RabbitMQ service's own boot log (`started TCP listener on [::]:5672`). Using the wrong port doesn't fail loudly; `amqplib` reports `Socket closed abruptly during opening handshake`, and the app still boots and serves traffic with messaging silently degraded (background jobs / domain events stop flowing).
 
-**Optional — skip rebuilds when only the backend changed**: Vercel's Project Settings → Git → "Ignored Build Step" accepts a shell command; a common pattern for non-Turborepo monorepos is `git diff --quiet HEAD^ HEAD -- apps/web` (exit 0 = skip, exit 1 = build — this is the opposite of normal exit-code intuition, and matches `git diff --quiet`'s own exit codes exactly, so no wrapping is needed). This was deliberately **not** committed into `apps/web/vercel.json` as an `ignoreCommand`: `HEAD^` fails on a shallow clone or a repo with only one commit, which would silently skip every build until fixed — configure it in the dashboard only after confirming Vercel's git integration uses a deep-enough clone.
+Also set on `api` and `worker`: `NODE_ENV=production`, `JWT_ACCESS_SECRET` (a real `openssl rand -hex 32` value, not the `.env.example` placeholder), `APP_WEB_URL` (the `web` service's public domain — see §5.5 for why this must be exact), plus `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` on `api` only (§5.2). Set `WORKER_PROCESS=true` on `worker` only, so its shared Dockerfile `HEALTHCHECK` (relevant to Docker Compose/Swarm-style runs, not Railway, but harmless either way) knows not to probe an HTTP port the worker never listens on.
 
-## 6. Kubernetes deployment shape (recommended)
+### 5.5 CORS and cross-site cookies
 
-Per the Phase 1 architecture, deploy these as **separate scalable units**:
+`api`'s CORS origin is `APP_WEB_URL`, matched as an **exact string** against the browser's `Origin` header (trimmed/trailing-slash-stripped in code, but still exact otherwise) — it must be the `web` service's domain with no path or trailing slash, e.g. `https://web-production-xxxx.up.railway.app`.
+
+Even with both services on Railway, `web` and `api` sit on **different `*.up.railway.app` subdomains**, and that wildcard domain is on the Public Suffix List (like `vercel.app`/`herokuapp.com` — every tenant's subdomain is deliberately treated as its own "site" to stop cross-tenant cookie leakage). This means the refresh-token cookie is still genuinely cross-site, not just cross-origin — `apps/api/src/modules/identity/auth.controller.ts` already sets `SameSite=None; Secure` whenever `NODE_ENV=production` for exactly this reason; no further change needed, just don't "simplify" it back to `Strict` because both services happen to share `railway.app`.
+
+If you later put a custom domain in front of `web` (e.g. `app.yourdomain.com`) and keep `api` on its Railway subdomain (or vice versa), the cross-site conclusion still holds — different registrable domains entirely.
+
+### 5.6 Verifying a deployment
+
+```bash
+curl -s https://<api-domain>/health/ready
+# {"data":{"status":"ok","info":{"database":{"status":"up"},"redis":{"status":"up"}},...}}
+
+curl -s -i -X POST https://<api-domain>/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"<seed-admin-email>","password":"<seed-admin-password>"}'
+# HTTP/2 200, a real accessToken in the body, and a Set-Cookie with SameSite=None; Secure
+```
+
+Check the `api` deploy log for `Connected to RabbitMQ and asserted domain-events exchange` (confirms the port fix from §5.4 actually took) and `Platform admin ensured for <email>` (confirms the boot-time seed from §5.2 ran). For `web`, confirm the deployed page loads and that its compiled JS contains the real API URL, not `localhost:3001` (§5.3).
+
+## 6. Kubernetes deployment shape (alternative to Railway)
+
+Railway (§5) is the supported, verified production path. If you're self-hosting on Kubernetes instead, deploy these as **separate scalable units**:
 
 | Deployment | Image | Command | Replicas | Notes |
 |---|---|---|---|---|

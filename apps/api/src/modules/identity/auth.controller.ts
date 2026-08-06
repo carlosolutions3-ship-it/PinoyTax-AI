@@ -28,10 +28,14 @@ const REFRESH_COOKIE = 'pinoytax_refresh_token';
 
 // SameSite=Strict only works when the frontend and API are same-site (e.g.
 // localhost:3000/3001 in dev, which differ only by port). This project's
-// documented production deployment (Vercel frontend + a separately-hosted
-// API — see DEPLOYMENT.md §5) puts them on different domains entirely, i.e.
-// genuinely cross-site — Strict (and Lax, for non-navigation requests like
-// fetch) cookies are never sent there, silently breaking the refresh flow.
+// documented production deployment (apps/web and apps/api as separate
+// Railway services — see DEPLOYMENT.md §5) puts them on different
+// `*.up.railway.app` subdomains; that wildcard domain is on the Public
+// Suffix List (like vercel.app/herokuapp.com — every tenant's subdomain is
+// treated as its own site, specifically to stop cross-tenant cookie
+// leakage), so this is genuinely cross-site despite sharing a parent
+// domain — Strict (and Lax, for non-navigation requests like fetch)
+// cookies are never sent there, silently breaking the refresh flow.
 // SameSite=None is required for cross-site cookies, which itself requires
 // Secure=true — already true whenever NODE_ENV=production.
 const isProduction = process.env.NODE_ENV === 'production';
