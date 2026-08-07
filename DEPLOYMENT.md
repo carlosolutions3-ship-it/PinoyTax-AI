@@ -91,13 +91,15 @@ Both deploy from this repo, `main` branch, and share the same Dockerfile:
 
 ### 5.3 `web` service
 
+`apps/web/railway.json` (config-as-code, picked up automatically once Root Directory is set to `apps/web`) already pins the build/deploy settings below, so creating the service only requires setting Root Directory, the env var, and generating a domain — the rest applies itself:
+
 | Setting | Value |
 |---|---|
 | Root Directory | `apps/web` |
 | Builder | Dockerfile |
 | Dockerfile Path | `apps/web/Dockerfile` (repo-root-relative — same gotcha as §5.2) |
 | Start Command | *(leave unset — the Dockerfile's own `CMD` is correct here)* |
-| Healthcheck Path | `/login` (or `/`) |
+| Healthcheck Path | `/login` |
 
 `NEXT_PUBLIC_API_URL` must be a **service variable on `web`** set to the `api` service's public domain plus `/v1` (e.g. `https://api-production-xxxx.up.railway.app/v1`) — Railway makes service variables available as Docker build args, and `apps/web/Dockerfile` already declares `ARG NEXT_PUBLIC_API_URL`, so no Dockerfile change is needed. Verify it actually got inlined after deploying: fetch the built page and its JS chunks, and confirm the literal URL appears in the compiled bundle rather than a runtime `process.env` lookup (the latter means the variable wasn't available at build time and the app silently fell back to `http://localhost:3001/v1`, which will never work in production and manifests as a generic "Unable to log in" with no useful error — see `apps/web/src/lib/api-client.ts`).
 
