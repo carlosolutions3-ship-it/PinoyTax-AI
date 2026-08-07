@@ -12,7 +12,7 @@ import { setupSwagger } from './swagger';
 import { PrismaService } from './common/prisma/prisma.service';
 
 // APP_WEB_URL is matched against the browser's Origin header, which never
-// has a trailing slash — a value like "https://web-production-xxxx.up.railway.app/"
+// has a trailing slash — a value like "https://pinoytax-web.onrender.com/"
 // (trailing slash) or one with stray whitespace from how it was pasted into
 // a dashboard would silently fail this exact-string CORS match and reject
 // every browser request, surfacing to users as a generic "Unable to log

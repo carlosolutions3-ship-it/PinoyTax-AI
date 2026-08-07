@@ -4,13 +4,16 @@ This document covers deploying PinoyTax AI to a production environment. For loca
 
 ## 1. Architecture recap
 
-**Railway is the supported production platform** — all five pieces below deploy there as separate services in one project (see §5). Nothing in the app assumes Railway specifically (it's a plain multi-stage Dockerfile setup), so any Docker-capable host works too (§4/§6 cover that path), but Railway is what's actually verified end-to-end.
+**Render is the supported production platform** — all pieces below deploy there via the `render.yaml` Blueprint at the repo root (see §5). Nothing in the app assumes Render specifically (it's a plain multi-stage Dockerfile setup), so any Docker-capable host works too (§4/§6 cover that path).
+
+Render was chosen after evaluating Railway: Railway's Hobby plan hard-caps a **workspace** (not just a project) at 5 services total, and this app needs 6 (api, worker, web, Postgres, Redis, RabbitMQ) — confirmed by actually hitting the "Free plan resource provision limit exceeded" error on Railway with a second, empty project, which Railway's own agent tooling initially misdiagnosed as a per-project limit before a follow-up check found it was workspace-wide. Render's free tier has no equivalent service-count ceiling. `apps/api` and `apps/web` still deployed and verified healthy on Railway during that evaluation (Postgres/Redis/RabbitMQ connected, `/health/ready` returning 200) before the migration to Render — see git history for `apps/web/railway.json` (removed) if that path is ever revisited.
 
 - `apps/api` — NestJS backend, deployed as **two separate services** from the same image/Dockerfile:
-  - `api` — HTTP server (`node dist/main.js`)
+  - `api` — HTTP server (`node dist/main.js`, chained after `prisma migrate deploy`)
   - `worker` — background job processor, no HTTP server (`node dist/worker.js`)
 - `apps/web` — Next.js frontend (standalone output), its own Dockerfile, deployed as a third service
-- PostgreSQL 15+, Redis 7+, RabbitMQ 3.13+ as stateful dependencies — on Railway, deployed from the official templates with a persistent volume each
+- PostgreSQL 15+ and Redis 7+ — Render-managed (Render Postgres, Render Key Value)
+- RabbitMQ 3.13+ — **not a Render product**; provisioned externally (CloudAMQP free tier recommended, §5.4)
 - S3-compatible object storage for the document vault
 - SMTP provider for transactional email
 
@@ -63,82 +66,74 @@ docker build -t pinoytax-web:latest ./apps/web \
 
 Push to your registry and deploy via your orchestrator of choice (Kubernetes, ECS, etc.). The provided `docker-compose.yml` is intended for local development and staging smoke-tests, not as a production deployment mechanism.
 
-## 5. Railway deployment (recommended production path)
+## 5. Render deployment (recommended production path)
 
-PinoyTax AI runs as **five services in one Railway project**: `Postgres`, `Redis`, `RabbitMQ` (each an official template with a persistent volume), plus `api`, `worker`, and `web` built from this GitHub repo. This section documents exact settings — every gotcha below was hit and root-caused running a real deployment, not theorized.
+PinoyTax AI deploys via the `render.yaml` Blueprint at the repo root: **New → Blueprint** in the Render dashboard, point it at this GitHub repo/branch, and Render provisions `pinoytax-postgres`, `pinoytax-redis`, `pinoytax-api`, `pinoytax-worker`, and `pinoytax-web` in one pass from the settings baked into that file. RabbitMQ is the one piece Render doesn't offer — §5.4 covers provisioning it externally.
 
 ### 5.1 Data services
 
-Add `Postgres`, `Redis`, and `RabbitMQ` from Railway's template marketplace (not raw Docker images by hand) — the templates come with a persistent volume already attached, which a hand-rolled service does not get automatically. **A Railway service can only have one volume**; if you experiment and end up with two, remove the extra one before deploying or the config will be rejected.
+`pinoytax-postgres` and `pinoytax-redis` are declared directly in `render.yaml` (Render-managed Postgres and Key Value/Redis) — no manual setup needed beyond accepting the Blueprint. Two things to verify in the dashboard once created, since Render's free-tier policies for these have changed over time and may differ from what's current when you deploy:
 
-### 5.2 `api` and `worker` services
+- **Postgres free plan expiry**: Render's free Postgres instances are commonly time-limited (historically ~30-90 days) before requiring an upgrade to a paid plan or the data is deleted. Check the instance's expiry date in the dashboard immediately after provisioning and plan the upgrade before it lapses — this is a real data-loss risk, not just a feature limitation.
+- **Redis free-tier availability**: confirm a free plan is actually offered for new Key Value instances when you deploy. If it isn't, Upstash's free Redis tier is a drop-in alternative (TLS `REDIS_URL`, same as Render's) — swap the `pinoytax-redis` service block for a `sync: false` `REDIS_URL` var pointed at it.
 
-Both deploy from this repo, `main` branch, and share the same Dockerfile:
+### 5.2 `pinoytax-api` and `pinoytax-worker` services
 
-| Setting | `api` | `worker` |
+Both build from `apps/api/Dockerfile` (`render.yaml`'s `dockerContext: ./apps/api`), same image, different `dockerCommand`:
+
+| Setting | `pinoytax-api` | `pinoytax-worker` |
 |---|---|---|
-| Root Directory | `apps/api` | `apps/api` |
-| Builder | Dockerfile | Dockerfile |
-| Dockerfile Path | `apps/api/Dockerfile` | `apps/api/Dockerfile` |
-| Start Command | `sh -c "npx prisma migrate deploy && node dist/main.js"` | `node dist/worker.js` |
-| Healthcheck Path | `/health/ready` | *(leave unset — worker has no HTTP server)* |
+| Type | Web Service | Background Worker |
+| Dockerfile Path | `./apps/api/Dockerfile` | `./apps/api/Dockerfile` |
+| Docker Command | `sh -c "npx prisma migrate deploy && node dist/main.js"` | `node dist/worker.js` |
+| Health Check Path | `/health/ready` | *(not applicable — Background Workers aren't HTTP-exposed on Render)* |
 
-**The Dockerfile Path gotcha**: even with Root Directory set to `apps/api`, Railway's `dockerfilePath` is resolved **relative to the repository root**, not the Root Directory — set it to `Dockerfile` alone and Railway silently falls back to its own Railpack buildpack auto-detection instead of erroring, which builds via `npm run build` and then runs `npm run start` (`nest start`, a dev-mode command that fails at runtime with `Cannot find module '/app/dist/main'` because devDependencies like `@nestjs/cli` aren't in the production `npm ci --omit=dev` layer). The build *looks* fine in the log (`Detected Next.js/Node version`, `npm run build` succeeds) right up until the container crash-loops. Always use the full `apps/api/Dockerfile` path and confirm the build log shows `[internal] load build definition from apps/api/Dockerfile`, not `[railpack] ...` lines.
+**Migrations** run via `pinoytax-api`'s `dockerCommand` chain above on every boot (idempotent — reports "No pending migrations to apply" once applied), the same pattern proven on Railway: a separate pre-deploy-command mechanism is one more moving part to trust, and chaining into the command Render *always* runs to completion sidesteps that.
 
-**Migrations**: run via the `api` service's Start Command shell chain above, which reliably runs `prisma migrate deploy` before every boot (idempotent — instantly reports "No pending migrations to apply" once applied). A separate Railway "Pre-Deploy Command" configuration was tried first and proved unreliable in practice (the configured command was observed reverting between deploys, and its execution window got cut short before finishing) — chaining migration into the actual Start Command avoided that entirely, since it's the one thing every deploy reliably runs to completion.
+**Seeding the platform admin** happens automatically on every `pinoytax-api` boot (`apps/api/src/main.ts`), guarded by `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` (`render.yaml` declares both as `sync: false` — set the real values in the Render dashboard after the Blueprint deploys). Fully idempotent (`upsert`), safe to leave set permanently. Reference-data seeding (roles, permissions, tax rules, form templates) still needs a one-time `npm run prisma:seed` from a full checkout with devDependencies, per §3 — it isn't part of the boot-time hook.
 
-**Seeding the platform admin**: do **not** rely on a separate seed command/job on Railway, for the same reliability reason as migrations above. Instead, `apps/api/src/main.ts` seeds/promotes the platform admin **automatically on every boot** of the `api` service, guarded by `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` and fully idempotent (`upsert`, safe to leave set permanently). Set those two variables on the `api` service and the admin account exists after the next deploy — no manual step required. (Reference-data seeding — roles, permissions, tax rules, form templates — still needs a one-time run of `npm run prisma:seed` from a full checkout with devDependencies, per §3, since it isn't part of the boot-time hook.)
+### 5.3 `pinoytax-web` service
 
-### 5.3 `web` service
+Builds from `apps/web/Dockerfile`. `NEXT_PUBLIC_API_URL` is set in `render.yaml` to `https://pinoytax-api.onrender.com/v1` — **Render service URLs are deterministic** (`https://<service-name>.onrender.com`, no random suffix like Railway), so this is correct without any post-deploy lookup, as long as you keep the service named `pinoytax-api` when accepting the Blueprint. Render passes service env vars as Docker build args when the Dockerfile declares a matching `ARG` (it does here), the same mechanism Railway uses — verify it actually got inlined after the first deploy by fetching the built page's JS chunks and confirming the literal URL appears rather than a `localhost:3001` fallback (see `apps/web/src/lib/api-client.ts`); a silent fallback manifests as a generic "Unable to log in" with no useful error.
 
-`apps/web/railway.json` (config-as-code, picked up automatically once Root Directory is set to `apps/web`) already pins the build/deploy settings below, so creating the service only requires setting Root Directory, the env var, and generating a domain — the rest applies itself:
+### 5.4 Environment variables, RabbitMQ, and internal networking
 
-| Setting | Value |
-|---|---|
-| Root Directory | `apps/web` |
-| Builder | Dockerfile |
-| Dockerfile Path | `apps/web/Dockerfile` (repo-root-relative — same gotcha as §5.2) |
-| Start Command | *(leave unset — the Dockerfile's own `CMD` is correct here)* |
-| Healthcheck Path | `/login` |
+`render.yaml` wires `DATABASE_URL` and `REDIS_URL` via `fromDatabase`/`fromService` references, and shares `JWT_ACCESS_SECRET` between `pinoytax-api` (auto-generated via `generateValue: true`) and `pinoytax-worker` (`fromService.envVarKey`) — these need no manual setup.
 
-`NEXT_PUBLIC_API_URL` must be a **service variable on `web`** set to the `api` service's public domain plus `/v1` (e.g. `https://api-production-xxxx.up.railway.app/v1`) — Railway makes service variables available as Docker build args, and `apps/web/Dockerfile` already declares `ARG NEXT_PUBLIC_API_URL`, so no Dockerfile change is needed. Verify it actually got inlined after deploying: fetch the built page and its JS chunks, and confirm the literal URL appears in the compiled bundle rather than a runtime `process.env` lookup (the latter means the variable wasn't available at build time and the app silently fell back to `http://localhost:3001/v1`, which will never work in production and manifests as a generic "Unable to log in" with no useful error — see `apps/web/src/lib/api-client.ts`).
+**RabbitMQ is not a Render product.** Provision it externally and set `RABBITMQ_URL` (declared `sync: false` on both `pinoytax-api` and `pinoytax-worker`) by hand:
 
-### 5.4 Environment variables and internal networking
+1. Sign up at [cloudamqp.com](https://www.cloudamqp.com) and create a free "Little Lemur" instance (free tier: ~1M messages/month, 20 connections, single node — no HA, so treat it as sufficient for launch/low-volume use, not a guarantee under sustained load).
+2. Copy the instance's AMQP URL (format: `amqps://user:pass@host/vhost`) from the CloudAMQP dashboard.
+3. Paste it into `RABBITMQ_URL` on **both** `pinoytax-api` and `pinoytax-worker` in the Render dashboard (they must match — both connect to the same exchange for domain events to flow between them).
+4. Redeploy both services. Check the deploy log for `Connected to RabbitMQ and asserted domain-events exchange` on each — if it's missing, the URL is wrong or the CloudAMQP instance isn't reachable (note `amqps://`, not `amqp://` — CloudAMQP requires TLS on its default port).
 
-Use Railway's reference-variable syntax (`${{ServiceName.VARIABLE}}`) instead of copy-pasting connection strings — it stays correct if a service's credentials ever rotate:
+If a project already has RabbitMQ hosted elsewhere (self-managed, another cloud), any reachable AMQP 0-9-1 URL works here — CloudAMQP is a recommendation, not a hard dependency.
 
-```
-# On api and worker:
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-REDIS_URL=${{Redis.REDIS_URL}}
-RABBITMQ_URL=amqp://${{RabbitMQ.RABBITMQ_DEFAULT_USER}}:${{RabbitMQ.RABBITMQ_DEFAULT_PASS}}@${{RabbitMQ.RAILWAY_PRIVATE_DOMAIN}}:5672/${{RabbitMQ.RABBITMQ_DEFAULT_VHOST}}
-```
-
-**The RabbitMQ port gotcha**: RabbitMQ's own `RAILWAY_SERVICE_RABBITMQ_URL` convenience variable resolves empty in practice — build the URL from the individual pieces above instead. And do **not** use RabbitMQ's `PORT` variable for this: on the `rabbitmq:4-management` image, `PORT` is Railway's binding for the **management UI** (15672), not AMQP. The AMQP listener is always `5672` — confirmed directly from the RabbitMQ service's own boot log (`started TCP listener on [::]:5672`). Using the wrong port doesn't fail loudly; `amqplib` reports `Socket closed abruptly during opening handshake`, and the app still boots and serves traffic with messaging silently degraded (background jobs / domain events stop flowing).
-
-Also set on `api` and `worker`: `NODE_ENV=production`, `JWT_ACCESS_SECRET` (a real `openssl rand -hex 32` value, not the `.env.example` placeholder), `APP_WEB_URL` (the `web` service's public domain — see §5.5 for why this must be exact), plus `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` on `api` only (§5.2). Set `WORKER_PROCESS=true` on `worker` only, so its shared Dockerfile `HEALTHCHECK` (relevant to Docker Compose/Swarm-style runs, not Railway, but harmless either way) knows not to probe an HTTP port the worker never listens on.
+Also set on `pinoytax-api` only (already `sync: false` placeholders in `render.yaml`): `ANTHROPIC_API_KEY` (AI assistant feature), `S3_*` (document vault — also read by `pinoytax-worker`, add there too if using), `SMTP_*` (transactional email). None of these are required for the app to boot (only `DATABASE_URL`/`JWT_ACCESS_SECRET` are Joi-validated as required) — those features are simply inert until configured.
 
 ### 5.5 CORS and cross-site cookies
 
-`api`'s CORS origin is `APP_WEB_URL`, matched as an **exact string** against the browser's `Origin` header (trimmed/trailing-slash-stripped in code, but still exact otherwise) — it must be the `web` service's domain with no path or trailing slash, e.g. `https://web-production-xxxx.up.railway.app`.
+`pinoytax-api`'s CORS origin is `APP_WEB_URL`, matched as an **exact string** against the browser's `Origin` header (trimmed/trailing-slash-stripped in code, but still exact otherwise) — `render.yaml` sets it to `https://pinoytax-web.onrender.com` with no path or trailing slash.
 
-Even with both services on Railway, `web` and `api` sit on **different `*.up.railway.app` subdomains**, and that wildcard domain is on the Public Suffix List (like `vercel.app`/`herokuapp.com` — every tenant's subdomain is deliberately treated as its own "site" to stop cross-tenant cookie leakage). This means the refresh-token cookie is still genuinely cross-site, not just cross-origin — `apps/api/src/modules/identity/auth.controller.ts` already sets `SameSite=None; Secure` whenever `NODE_ENV=production` for exactly this reason; no further change needed, just don't "simplify" it back to `Strict` because both services happen to share `railway.app`.
+`pinoytax-web` and `pinoytax-api` sit on **different `*.onrender.com` subdomains**, and that wildcard domain is on the Public Suffix List (like `vercel.app`/`up.railway.app` — every tenant's subdomain is deliberately treated as its own "site" to stop cross-tenant cookie leakage). This means the refresh-token cookie is genuinely cross-site, not just cross-origin — `apps/api/src/modules/identity/auth.controller.ts` already sets `SameSite=None; Secure` whenever `NODE_ENV=production` for exactly this reason; don't "simplify" it back to `Strict` because both services happen to share `onrender.com`.
 
-If you later put a custom domain in front of `web` (e.g. `app.yourdomain.com`) and keep `api` on its Railway subdomain (or vice versa), the cross-site conclusion still holds — different registrable domains entirely.
+If you later put a custom domain in front of `pinoytax-web` (e.g. `app.yourdomain.com`) and keep `pinoytax-api` on its Render subdomain (or vice versa), the cross-site conclusion still holds — different registrable domains entirely.
 
 ### 5.6 Verifying a deployment
 
 ```bash
-curl -s https://<api-domain>/health/ready
+curl -s https://pinoytax-api.onrender.com/health/ready
 # {"data":{"status":"ok","info":{"database":{"status":"up"},"redis":{"status":"up"}},...}}
 
-curl -s -i -X POST https://<api-domain>/v1/auth/login \
+curl -s -i -X POST https://pinoytax-api.onrender.com/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"<seed-admin-email>","password":"<seed-admin-password>"}'
 # HTTP/2 200, a real accessToken in the body, and a Set-Cookie with SameSite=None; Secure
 ```
 
-Check the `api` deploy log for `Connected to RabbitMQ and asserted domain-events exchange` (confirms the port fix from §5.4 actually took) and `Platform admin ensured for <email>` (confirms the boot-time seed from §5.2 ran). For `web`, confirm the deployed page loads and that its compiled JS contains the real API URL, not `localhost:3001` (§5.3).
+Check the `pinoytax-api` deploy log for `Connected to RabbitMQ and asserted domain-events exchange` (confirms §5.4's CloudAMQP URL is correct) and `Platform admin ensured for <email>` (confirms the boot-time seed from §5.2 ran). Check `pinoytax-worker`'s log for `PinoyTax AI worker process started — listening for queued jobs` and its own `Connected to RabbitMQ`/`Connected to PostgreSQL via Prisma` lines. For `pinoytax-web`, confirm the deployed page loads at `https://pinoytax-web.onrender.com/login` and that its compiled JS contains the real API URL, not `localhost:3001` (§5.3).
+
+**Free-tier cold starts**: Render's free Web Services spin down after a period of inactivity and take on the order of tens of seconds to spin back up on the next request — expect the first request after idle time (including automated health checks) to be slow, not broken. This applies to `pinoytax-api` and `pinoytax-web`; confirm current behavior for Background Workers on the free tier in the Render dashboard, since Render's spin-down policy differs by service type and changes over time.
 
 ## 6. Kubernetes deployment shape (alternative to Railway)
 

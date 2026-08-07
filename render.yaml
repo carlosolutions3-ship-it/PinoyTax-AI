@@ -1,0 +1,177 @@
+# Render Blueprint for PinoyTax AI.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> point at this repo/branch.
+# Render provisions everything below in one pass except RabbitMQ, which
+# Render does not offer as a product — provision that separately (CloudAMQP
+# free tier recommended) and paste the resulting AMQP URL into the
+# RABBITMQ_URL variable on both pinoytax-api and pinoytax-worker afterwards.
+# See DEPLOYMENT.md Section 5 for the full walkthrough, including why
+# Railway was abandoned in favor of Render (Railway's Hobby plan caps a
+# workspace at 5 services total, one short of what this app needs).
+databases:
+  - name: pinoytax-postgres
+    databaseName: pinoytax_ai
+    user: pinoytax
+    plan: free
+    region: oregon
+
+services:
+  - type: redis
+    name: pinoytax-redis
+    plan: free
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  - type: web
+    name: pinoytax-api
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    # Chains the migration into every boot rather than relying on a separate
+    # pre-deploy step, mirroring the approach validated on Railway (a
+    # dedicated pre-deploy command proved unreliable there — see
+    # DEPLOYMENT.md). Idempotent: reports "No pending migrations" once applied.
+    dockerCommand: sh -c "npx prisma migrate deploy && node dist/main.js"
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pinoytax-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: pinoytax-redis
+          property: connectionString
+      - key: RABBITMQ_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: JWT_REFRESH_EXPIRES_IN_REMEMBER_ME
+        value: 30d
+      # Deterministic: Render gives every service the URL
+      # https://<name>.onrender.com, so this is known before first deploy
+      # (unlike Railway, which assigns a random subdomain suffix).
+      - key: APP_WEB_URL
+        value: https://pinoytax-web.onrender.com
+      - key: ACCOUNT_LOCK_DURATION_MINUTES
+        value: "15"
+      - key: MAX_FAILED_LOGIN_ATTEMPTS
+        value: "5"
+      - key: LOG_LEVEL
+        value: info
+      # Seeds/promotes the platform admin on every boot (see main.ts) once
+      # both are set — idempotent, safe to leave set permanently.
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      # Optional integrations — the app boots and serves traffic without
+      # these (Joi validation only requires DATABASE_URL/JWT_ACCESS_SECRET);
+      # unset means the AI assistant, document vault, and transactional
+      # email features are inert until filled in.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+  - type: worker
+    name: pinoytax-worker
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    dockerCommand: node dist/worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WORKER_PROCESS
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pinoytax-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: pinoytax-redis
+          property: connectionString
+      - key: RABBITMQ_URL
+        sync: false
+      # Shares the same secret pinoytax-api generated, so tokens issued by
+      # one are valid to the other.
+      - key: JWT_ACCESS_SECRET
+        fromService:
+          type: web
+          name: pinoytax-api
+          envVarKey: JWT_ACCESS_SECRET
+      - key: LOG_LEVEL
+        value: info
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+  - type: web
+    name: pinoytax-web
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: ./apps/web
+    healthCheckPath: /login
+    envVars:
+      # NEXT_PUBLIC_* vars are baked into the client bundle at build time.
+      # Render passes service env vars as Docker build args when the
+      # Dockerfile declares a matching ARG (apps/web/Dockerfile already
+      # does) — confirm this after first deploy the same way DEPLOYMENT.md
+      # describes for the old Railway path: fetch the built JS and check
+      # the real URL is inlined, not a localhost fallback.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://pinoytax-api.onrender.com/v1

@@ -4,8 +4,8 @@
 // no devDependencies, so it can't run `ts-node prisma/seed.ts` directly.
 // This file only depends on @prisma/client and argon2, both real production
 // dependencies, so it can run as `node prisma/seed.js` inside the deployed
-// container (e.g. as a Railway preDeployCommand, a Kubernetes Job, or a
-// one-off ECS task) with no build-time changes to the image.
+// container (e.g. via `render exec`, a Kubernetes Job, or a one-off ECS
+// task) with no build-time changes to the image.
 //
 // Regenerate after any change to seed.ts:
 //   npx tsc prisma/seed.ts --outDir <tmpdir> --module commonjs --target ES2021 \
