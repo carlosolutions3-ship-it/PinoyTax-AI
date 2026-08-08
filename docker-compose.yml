@@ -46,6 +46,14 @@ services:
       dockerfile: Dockerfile
     container_name: pinoytax_api
     restart: unless-stopped
+    # Pins this container to api-only. The image's default CMD (unset here
+    # would otherwise apply) runs api+worker combined via supervisord —
+    # that mode exists for Render's Free plan (no standalone Background
+    # Worker service type there), not for local dev, where the separate
+    # `worker` service below already covers the worker process. Without
+    # this override, running `docker-compose up` would process every
+    # background job twice (once from this container, once from `worker`).
+    command: ["node", "dist/main.js"]
     depends_on:
       postgres:
         condition: service_healthy

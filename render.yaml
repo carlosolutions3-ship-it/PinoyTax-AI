@@ -4,10 +4,18 @@
 # Render provisions everything below in one pass except RabbitMQ, which
 # Render does not offer as a product — provision that separately (CloudAMQP
 # free tier recommended) and paste the resulting AMQP URL into the
-# RABBITMQ_URL variable on both pinoytax-api and pinoytax-worker afterwards.
+# RABBITMQ_URL variable on pinoytax-api afterwards.
 # See DEPLOYMENT.md Section 5 for the full walkthrough, including why
 # Railway was abandoned in favor of Render (Railway's Hobby plan caps a
 # workspace at 5 services total, one short of what this app needs).
+#
+# No separate worker service: Render's Free plan only supports Free
+# instances on Web Service, Static Site, Postgres, and Key Value — a
+# Background Worker service (`type: worker`) requires a paid plan and was
+# rejected outright ("service type is not available for this plan").
+# pinoytax-api instead runs the api HTTP server and the worker background
+# processor as two supervisord-managed processes in one container — see
+# apps/api/docker/supervisord.conf and the Dockerfile's combined-mode CMD.
 databases:
   - name: pinoytax-postgres
     databaseName: pinoytax_ai
@@ -30,11 +38,15 @@ services:
     plan: free
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: ./apps/api
-    # Chains the migration into every boot rather than relying on a separate
-    # pre-deploy step, mirroring the approach validated on Railway (a
-    # dedicated pre-deploy command proved unreliable there — see
-    # DEPLOYMENT.md). Idempotent: reports "No pending migrations" once applied.
-    dockerCommand: sh -c "npx prisma migrate deploy && node dist/main.js"
+    # Matches the image's default CMD exactly (explicit here for clarity,
+    # not relying on the Dockerfile's default). Chains the migration into
+    # every boot rather than a separate pre-deploy step, mirroring the
+    # approach validated on Railway (a dedicated pre-deploy command proved
+    # unreliable there — see DEPLOYMENT.md). Idempotent: reports "No
+    # pending migrations" once applied. `exec` hands off to supervisord,
+    # which runs api and worker as two independently-supervised processes
+    # — see apps/api/docker/supervisord.conf.
+    dockerCommand: sh -c "npx prisma migrate deploy && exec supervisord -c /app/docker/supervisord.conf"
     healthCheckPath: /health/ready
     envVars:
       - key: NODE_ENV
@@ -79,62 +91,6 @@ services:
       # these (Joi validation only requires DATABASE_URL/JWT_ACCESS_SECRET);
       # unset means the AI assistant, document vault, and transactional
       # email features are inert until filled in.
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: S3_ENDPOINT
-        sync: false
-      - key: S3_BUCKET
-        sync: false
-      - key: S3_ACCESS_KEY_ID
-        sync: false
-      - key: S3_SECRET_ACCESS_KEY
-        sync: false
-      - key: S3_REGION
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
-        sync: false
-
-  - type: worker
-    name: pinoytax-worker
-    runtime: docker
-    region: oregon
-    plan: free
-    dockerfilePath: ./apps/api/Dockerfile
-    dockerContext: ./apps/api
-    dockerCommand: node dist/worker.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: WORKER_PROCESS
-        value: "true"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: pinoytax-postgres
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: pinoytax-redis
-          property: connectionString
-      - key: RABBITMQ_URL
-        sync: false
-      # Shares the same secret pinoytax-api generated, so tokens issued by
-      # one are valid to the other.
-      - key: JWT_ACCESS_SECRET
-        fromService:
-          type: web
-          name: pinoytax-api
-          envVarKey: JWT_ACCESS_SECRET
-      - key: LOG_LEVEL
-        value: info
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: S3_ENDPOINT

@@ -8,10 +8,8 @@ This document covers deploying PinoyTax AI to a production environment. For loca
 
 Render was chosen after evaluating Railway: Railway's Hobby plan hard-caps a **workspace** (not just a project) at 5 services total, and this app needs 6 (api, worker, web, Postgres, Redis, RabbitMQ) — confirmed by actually hitting the "Free plan resource provision limit exceeded" error on Railway with a second, empty project, which Railway's own agent tooling initially misdiagnosed as a per-project limit before a follow-up check found it was workspace-wide. Render's free tier has no equivalent service-count ceiling. `apps/api` and `apps/web` still deployed and verified healthy on Railway during that evaluation (Postgres/Redis/RabbitMQ connected, `/health/ready` returning 200) before the migration to Render — see git history for `apps/web/railway.json` (removed) if that path is ever revisited.
 
-- `apps/api` — NestJS backend, deployed as **two separate services** from the same image/Dockerfile:
-  - `api` — HTTP server (`node dist/main.js`, chained after `prisma migrate deploy`)
-  - `worker` — background job processor, no HTTP server (`node dist/worker.js`)
-- `apps/web` — Next.js frontend (standalone output), its own Dockerfile, deployed as a third service
+- `apps/api` — NestJS backend, deployed as **one Render Web Service running two supervised processes**: the HTTP server (`node dist/main.js`) and the worker background processor (`node dist/worker.js`), managed by `supervisord` inside the same container (`apps/api/docker/supervisord.conf`) — not two separate Render services, because Render's Free plan has no Background Worker instance type (only Web Service, Static Site, Postgres, and Key Value get Free instances). The same image still supports running them as genuinely separate services/containers (Railway's existing deployment does exactly that via explicit Start Command overrides, and `docker-compose.yml` keeps them as separate local containers too) — see §5.2.
+- `apps/web` — Next.js frontend (standalone output), its own Dockerfile, deployed as a second service
 - PostgreSQL 15+ and Redis 7+ — Render-managed (Render Postgres, Render Key Value)
 - RabbitMQ 3.13+ — **not a Render product**; provisioned externally (CloudAMQP free tier recommended, §5.4)
 - S3-compatible object storage for the document vault
@@ -68,7 +66,7 @@ Push to your registry and deploy via your orchestrator of choice (Kubernetes, EC
 
 ## 5. Render deployment (recommended production path)
 
-PinoyTax AI deploys via the `render.yaml` Blueprint at the repo root: **New → Blueprint** in the Render dashboard, point it at this GitHub repo/branch, and Render provisions `pinoytax-postgres`, `pinoytax-redis`, `pinoytax-api`, `pinoytax-worker`, and `pinoytax-web` in one pass from the settings baked into that file. RabbitMQ is the one piece Render doesn't offer — §5.4 covers provisioning it externally.
+PinoyTax AI deploys via the `render.yaml` Blueprint at the repo root: **New → Blueprint** in the Render dashboard, point it at this GitHub repo/branch, and Render provisions `pinoytax-postgres`, `pinoytax-redis`, `pinoytax-api`, and `pinoytax-web` in one pass from the settings baked into that file — four resources, all Free plan. RabbitMQ is the one piece Render doesn't offer — §5.4 covers provisioning it externally.
 
 ### 5.1 Data services
 
@@ -77,18 +75,22 @@ PinoyTax AI deploys via the `render.yaml` Blueprint at the repo root: **New → 
 - **Postgres free plan expiry**: Render's free Postgres instances are commonly time-limited (historically ~30-90 days) before requiring an upgrade to a paid plan or the data is deleted. Check the instance's expiry date in the dashboard immediately after provisioning and plan the upgrade before it lapses — this is a real data-loss risk, not just a feature limitation.
 - **Redis free-tier availability**: confirm a free plan is actually offered for new Key Value instances when you deploy. If it isn't, Upstash's free Redis tier is a drop-in alternative (TLS `REDIS_URL`, same as Render's) — swap the `pinoytax-redis` service block for a `sync: false` `REDIS_URL` var pointed at it.
 
-### 5.2 `pinoytax-api` and `pinoytax-worker` services
+### 5.2 `pinoytax-api` (runs both api and worker)
 
-Both build from `apps/api/Dockerfile` (`render.yaml`'s `dockerContext: ./apps/api`), same image, different `dockerCommand`:
+| Setting | Value |
+|---|---|
+| Type | Web Service |
+| Dockerfile Path | `./apps/api/Dockerfile` |
+| Docker Command | `sh -c "npx prisma migrate deploy && exec supervisord -c /app/docker/supervisord.conf"` |
+| Health Check Path | `/health/ready` |
 
-| Setting | `pinoytax-api` | `pinoytax-worker` |
-|---|---|---|
-| Type | Web Service | Background Worker |
-| Dockerfile Path | `./apps/api/Dockerfile` | `./apps/api/Dockerfile` |
-| Docker Command | `sh -c "npx prisma migrate deploy && node dist/main.js"` | `node dist/worker.js` |
-| Health Check Path | `/health/ready` | *(not applicable — Background Workers aren't HTTP-exposed on Render)* |
+**Why one service instead of two**: a Render Blueprint that declares a `type: worker` resource is rejected outright on the Free plan ("service type is not available for this plan") — Free instances only exist for Web Service, Static Site, Postgres, and Key Value. Rather than pay for a Background Worker (Starter plan, $7/mo+) just to run `node dist/worker.js`, `pinoytax-api` runs it as a second process inside the same container, supervised by `supervisord` (`apk add supervisor` in the runtime stage — see `apps/api/Dockerfile`).
 
-**Migrations** run via `pinoytax-api`'s `dockerCommand` chain above on every boot (idempotent — reports "No pending migrations to apply" once applied), the same pattern proven on Railway: a separate pre-deploy-command mechanism is one more moving part to trust, and chaining into the command Render *always* runs to completion sidesteps that.
+`apps/api/docker/supervisord.conf` defines two programs, `api` and `worker`, each with independent `autorestart`, `stopsignal=TERM`/`stopwaitsecs=25` for graceful shutdown, and stdout/stderr streamed straight to the container's log output (both processes' logs are interleaved in the same Render log view, prefixed implicitly by supervisord). This was chosen over a bare `node dist/worker.js & node dist/main.js` specifically because a bare `&` leaves the worker unsupervised — if it crashes, nothing restarts it and nothing surfaces the failure; background job processing silently stops while the container keeps reporting healthy (the healthcheck only ever probes the api process). supervisord gives each process independent crash recovery and ensures the container's SIGTERM (on deploy/restart) actually reaches both children's graceful-shutdown paths (`app.enableShutdownHooks()` in both `main.ts` and `worker.ts`) rather than being swallowed by an orphaned shell — this is also why the Docker `CMD` uses `exec supervisord ...` rather than a plain `supervisord ...` call, so `dumb-init` (the container's PID 1) forwards signals directly to supervisord instead of a shell wrapping it.
+
+A worker crash never takes the api down with it (and vice versa) — `autorestart` is scoped per-program in supervisord, not global. If you ever move off the Free plan, reverting to two separate Render services is a two-line `render.yaml` change (`dockerCommand: node dist/worker.js` on a re-added `type: worker` block) since nothing about the api/worker code itself changed — only the container-level orchestration.
+
+**Migrations** run via `pinoytax-api`'s `dockerCommand` chain above on every boot (idempotent — reports "No pending migrations to apply" once applied), the same pattern proven on Railway: a separate pre-deploy-command mechanism is one more moving part to trust, and chaining into the command Render *always* runs to completion sidesteps that. **If a deploy fails specifically during this step**, check the build/deploy log for a Postgres permission error on the `CREATE ROLE pinoytax_app` statement in `prisma/migrations/20240101000002_audit_append_only` — some managed Postgres providers don't grant the default connection user `CREATEROLE`, and this repo hasn't independently confirmed which way Render's default Postgres user is configured (see §2 item 4).
 
 **Seeding the platform admin** happens automatically on every `pinoytax-api` boot (`apps/api/src/main.ts`), guarded by `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` (`render.yaml` declares both as `sync: false` — set the real values in the Render dashboard after the Blueprint deploys). Fully idempotent (`upsert`), safe to leave set permanently. Reference-data seeding (roles, permissions, tax rules, form templates) still needs a one-time `npm run prisma:seed` from a full checkout with devDependencies, per §3 — it isn't part of the boot-time hook.
 
@@ -98,18 +100,18 @@ Builds from `apps/web/Dockerfile`. `NEXT_PUBLIC_API_URL` is set in `render.yaml`
 
 ### 5.4 Environment variables, RabbitMQ, and internal networking
 
-`render.yaml` wires `DATABASE_URL` and `REDIS_URL` via `fromDatabase`/`fromService` references, and shares `JWT_ACCESS_SECRET` between `pinoytax-api` (auto-generated via `generateValue: true`) and `pinoytax-worker` (`fromService.envVarKey`) — these need no manual setup.
+`render.yaml` wires `DATABASE_URL` and `REDIS_URL` via `fromDatabase`/`fromService` references — these need no manual setup. `JWT_ACCESS_SECRET` is auto-generated (`generateValue: true`) and, since api and worker are now one service (§5.2), there's no cross-service secret-sharing to configure either.
 
-**RabbitMQ is not a Render product.** Provision it externally and set `RABBITMQ_URL` (declared `sync: false` on both `pinoytax-api` and `pinoytax-worker`) by hand:
+**RabbitMQ is not a Render product.** Provision it externally and set `RABBITMQ_URL` (declared `sync: false` on `pinoytax-api`) by hand:
 
-1. Sign up at [cloudamqp.com](https://www.cloudamqp.com) and create a free "Little Lemur" instance (free tier: ~1M messages/month, 20 connections, single node — no HA, so treat it as sufficient for launch/low-volume use, not a guarantee under sustained load).
+1. Sign up at [cloudamqp.com](https://www.cloudamqp.com) and create a free "Little Lemur" instance (free tier: ~1M messages/month, 20 connections, single node — no HA, so treat it as sufficient for launch/low-volume use, not a guarantee under sustained load; no credit card required for this plan as of this writing, but confirm before entering any payment details — abort if the signup flow asks for one unexpectedly).
 2. Copy the instance's AMQP URL (format: `amqps://user:pass@host/vhost`) from the CloudAMQP dashboard.
-3. Paste it into `RABBITMQ_URL` on **both** `pinoytax-api` and `pinoytax-worker` in the Render dashboard (they must match — both connect to the same exchange for domain events to flow between them).
-4. Redeploy both services. Check the deploy log for `Connected to RabbitMQ and asserted domain-events exchange` on each — if it's missing, the URL is wrong or the CloudAMQP instance isn't reachable (note `amqps://`, not `amqp://` — CloudAMQP requires TLS on its default port).
+3. Paste it into `RABBITMQ_URL` on `pinoytax-api` in the Render dashboard.
+4. Redeploy. Check the deploy log for **two** `Connected to RabbitMQ and asserted domain-events exchange` lines — one from the `api` program, one from `worker` (§5.2's supervisord setup runs both in the same container, so both connect independently) — if either is missing, the URL is wrong or the CloudAMQP instance isn't reachable (note `amqps://`, not `amqp://` — CloudAMQP requires TLS on its default port).
 
 If a project already has RabbitMQ hosted elsewhere (self-managed, another cloud), any reachable AMQP 0-9-1 URL works here — CloudAMQP is a recommendation, not a hard dependency.
 
-Also set on `pinoytax-api` only (already `sync: false` placeholders in `render.yaml`): `ANTHROPIC_API_KEY` (AI assistant feature), `S3_*` (document vault — also read by `pinoytax-worker`, add there too if using), `SMTP_*` (transactional email). None of these are required for the app to boot (only `DATABASE_URL`/`JWT_ACCESS_SECRET` are Joi-validated as required) — those features are simply inert until configured.
+Also set (already `sync: false` placeholders in `render.yaml`): `ANTHROPIC_API_KEY` (AI assistant feature), `S3_*` (document vault), `SMTP_*` (transactional email). None of these are required for the app to boot (only `DATABASE_URL`/`JWT_ACCESS_SECRET` are Joi-validated as required) — those features are simply inert until configured.
 
 ### 5.5 CORS and cross-site cookies
 
@@ -131,9 +133,9 @@ curl -s -i -X POST https://pinoytax-api.onrender.com/v1/auth/login \
 # HTTP/2 200, a real accessToken in the body, and a Set-Cookie with SameSite=None; Secure
 ```
 
-Check the `pinoytax-api` deploy log for `Connected to RabbitMQ and asserted domain-events exchange` (confirms §5.4's CloudAMQP URL is correct) and `Platform admin ensured for <email>` (confirms the boot-time seed from §5.2 ran). Check `pinoytax-worker`'s log for `PinoyTax AI worker process started — listening for queued jobs` and its own `Connected to RabbitMQ`/`Connected to PostgreSQL via Prisma` lines. For `pinoytax-web`, confirm the deployed page loads at `https://pinoytax-web.onrender.com/login` and that its compiled JS contains the real API URL, not `localhost:3001` (§5.3).
+Check the `pinoytax-api` deploy log for `Connected to RabbitMQ and asserted domain-events exchange` **twice** (once from the api process, once from the worker process — §5.2), `Platform admin ensured for <email>` (confirms the boot-time seed ran), and `PinoyTax AI worker process started — listening for queued jobs` (confirms supervisord actually launched the worker program, not just the api one). For `pinoytax-web`, confirm the deployed page loads at `https://pinoytax-web.onrender.com/login` and that its compiled JS contains the real API URL, not `localhost:3001` (§5.3).
 
-**Free-tier cold starts**: Render's free Web Services spin down after a period of inactivity and take on the order of tens of seconds to spin back up on the next request — expect the first request after idle time (including automated health checks) to be slow, not broken. This applies to `pinoytax-api` and `pinoytax-web`; confirm current behavior for Background Workers on the free tier in the Render dashboard, since Render's spin-down policy differs by service type and changes over time.
+**Free-tier cold starts — this is the real cost of the combined-container approach**: Render's free Web Services spin down after a period of inactivity (on the order of 15 minutes) and take tens of seconds to spin back up on the next inbound HTTP request. Because `pinoytax-worker` no longer exists as its own always-on service, **the worker process only runs while `pinoytax-api` is awake** — while the container is spun down, RabbitMQ/queue-triggered background jobs (compliance scans, notification dispatch) queue up rather than process, and only resume once an HTTP request wakes the container back up. This is a genuine behavioral difference from a dedicated always-on worker, not just a cold-start latency issue — acceptable for a free-tier low-traffic deployment, but worth knowing before relying on background jobs completing promptly with no user-facing traffic to keep the container warm. A paid Starter-plan Background Worker (§5.2's two-line revert) removes this limitation if it becomes a problem.
 
 ## 6. Kubernetes deployment shape (alternative to Railway)
 
