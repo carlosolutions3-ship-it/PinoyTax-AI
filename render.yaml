@@ -38,15 +38,23 @@ services:
     plan: free
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: ./apps/api
-    # Matches the image's default CMD exactly (explicit here for clarity,
-    # not relying on the Dockerfile's default). Chains the migration into
-    # every boot rather than a separate pre-deploy step, mirroring the
-    # approach validated on Railway (a dedicated pre-deploy command proved
-    # unreliable there — see DEPLOYMENT.md). Idempotent: reports "No
-    # pending migrations" once applied. `exec` hands off to supervisord,
-    # which runs api and worker as two independently-supervised processes
-    # — see apps/api/docker/supervisord.conf.
-    dockerCommand: sh -c "npx prisma migrate deploy && exec supervisord -c /app/docker/supervisord.conf"
+    # No dockerCommand override here — deliberately relies on the
+    # Dockerfile's own CMD (identical command, in proper JSON exec-form:
+    # ["sh", "-c", "npx prisma migrate deploy && exec supervisord -c
+    # ..."]). Render's dockerCommand field takes a plain YAML string and
+    # mis-tokenizes compound shell commands containing `&&` when
+    # rebuilding the container's argv — confirmed live: the deploy log
+    # showed `sh` receiving the entire command text as one literal
+    # argument ("sh: npx prisma migrate deploy && exec supervisord -c
+    # /app/docker/supervisord.conf: not found", exit 127) instead of a
+    # `-c <script>` pair. Dropping the redundant override and letting the
+    # Dockerfile's correctly-array-form CMD stand on its own — the same
+    # pattern pinoytax-web already uses successfully below — avoids that
+    # string-parsing path entirely. Idempotent either way: `prisma migrate
+    # deploy` reports "No pending migrations" once applied, `exec` hands
+    # off to supervisord, which runs api and worker as two
+    # independently-supervised processes — see
+    # apps/api/docker/supervisord.conf.
     healthCheckPath: /health/ready
     envVars:
       - key: NODE_ENV
