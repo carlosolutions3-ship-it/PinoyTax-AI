@@ -15,7 +15,7 @@
     "next": "^14.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "lucide-react": "^1.27.0"
+    "lucide-react": "^1.41.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -24,8 +24,8 @@
     "typescript": "^5.3.3",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
-    "autoprefixer": "^10.4.17",
-    "postcss": "^8.4.33",
+    "autoprefixer": "^10.5.5",
+    "postcss": "^8.5.28",
     "tailwindcss": "3.4.19"
   }
 }
